@@ -8,14 +8,14 @@ using Debug = UnityEngine.Debug;
 using BepInEx;
 using IL;
 
-namespace no_pups_in_my_walls
+namespace no_stuck_pups
 {
   [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
   public class NoStackPups : BaseUnityPlugin
   {
     public const string PLUGIN_GUID = "gelbi.no_stuck_pups";
     public const string PLUGIN_NAME = "No stuck pups";
-    public const string PLUGIN_VERSION = "1.0.1";
+    public const string PLUGIN_VERSION = "1.0.2";
 
     public int latest_cycle = -1, attempt_counter = 0;
 
@@ -73,7 +73,7 @@ namespace no_pups_in_my_walls
     public void Room_Loaded(On.Room.orig_Loaded orig, Room self)
     {
       orig(self);
-      if (self.world.regionState == null || latest_cycle == self.world.regionState.saveState.cycleNumber)
+      if (self.world == null || self.world.regionState == null || latest_cycle == self.world.regionState.saveState.cycleNumber)
         return;
       latest_cycle = self.world.regionState.saveState.cycleNumber;
       attempt_counter = 0;
