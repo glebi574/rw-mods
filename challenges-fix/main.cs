@@ -2,6 +2,7 @@
 using MoreSlugcats;
 using RWCustom;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -9,6 +10,7 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
 using Watcher;
+using MonoMod.RuntimeDetour;
 
 namespace challenges_fix
 {
@@ -17,14 +19,38 @@ namespace challenges_fix
   {
     public const string PLUGIN_GUID = "gelbi.challenges_fix";
     public const string PLUGIN_NAME = "Challenges Fix";
-    public const string PLUGIN_VERSION = "1.0.0";
+    public const string PLUGIN_VERSION = "1.0.1";
 
     public void OnEnable()
     {
       On.AbstractCreature.setCustomFlags += AbstractCreature_setCustomFlags;
+
+      _ = new Hook(typeof(DangleFruit)
+        .GetProperty(nameof(DangleFruit.AbstrConsumable))
+        .GetGetMethod(),
+        (Func<Func<DangleFruit, DangleFruit.AbstractDangleFruit>, DangleFruit, DangleFruit.AbstractDangleFruit>)get_abstrConsumable);
     }
 
-    private void AbstractCreature_setCustomFlags(On.AbstractCreature.orig_setCustomFlags orig, AbstractCreature self)
+    public static DangleFruit.AbstractDangleFruit get_abstrConsumable(Func<DangleFruit, DangleFruit.AbstractDangleFruit> orig, DangleFruit self)
+    {
+      if (self.abstractPhysicalObject is DangleFruit.AbstractDangleFruit abstract_fruit)
+        return abstract_fruit;
+      int index = (self.abstractPhysicalObject as AbstractConsumable).placedObjectIndex;
+      DangleFruit.AbstractDangleFruit abstrConsumable = new DangleFruit.AbstractDangleFruit(
+        self.room.world,
+        self.abstractPhysicalObject.realizedObject,
+        self.abstractPhysicalObject.pos,
+        self.abstractPhysicalObject.ID,
+        self.room.abstractRoom.index,
+        index,
+        index == -1 ? false : ModManager.Watcher && self.room.roomSettings.placedObjects[index].type == WatcherEnums.PlacedObjectType.RottenDangleFruit,
+        index == -1 ? null : self.room.roomSettings.placedObjects[index].data as PlacedObject.ConsumableObjectData);
+      abstrConsumable.isConsumed = false;
+      self.abstractPhysicalObject = abstrConsumable;
+      return abstrConsumable;
+    }
+
+    public void AbstractCreature_setCustomFlags(On.AbstractCreature.orig_setCustomFlags orig, AbstractCreature self)
     {
       if (self.Room == null)
       {
@@ -64,10 +90,12 @@ namespace challenges_fix
         }
       }
 
-      List<string> list = new List<string>();
+      List<string> list = new List<string>(), list2;
       if (self.Room.world.region != null)
       {
         list = self.Room.world.region.regionParams.globalCreatureFlags_All.ToList<string>();
+        if (self.Room.world.region.regionParams.globalCreatureFlags_Specific.TryGetValue(self.creatureTemplate.type, out list2))
+          list.AddRange(list2);
       }
 
       if (self.spawnData != null && self.spawnData[0] == '{')
