@@ -19,16 +19,52 @@ namespace challenges_fix
   {
     public const string PLUGIN_GUID = "gelbi.challenges_fix";
     public const string PLUGIN_NAME = "Challenges Fix";
-    public const string PLUGIN_VERSION = "1.0.1";
+    public const string PLUGIN_VERSION = "1.0.2";
 
     public void OnEnable()
     {
       On.AbstractCreature.setCustomFlags += AbstractCreature_setCustomFlags;
+      On.SuperStructureFuses.ctor += SuperStructureFuses_ctor;
 
       _ = new Hook(typeof(DangleFruit)
         .GetProperty(nameof(DangleFruit.AbstrConsumable))
         .GetGetMethod(),
         (Func<Func<DangleFruit, DangleFruit.AbstractDangleFruit>, DangleFruit, DangleFruit.AbstractDangleFruit>)get_abstrConsumable);
+    }
+
+    public void SuperStructureFuses_ctor(On.SuperStructureFuses.orig_ctor orig, SuperStructureFuses self, PlacedObject placedObject, IntRect rect, Room room)
+    {
+      self.placedObject = placedObject;
+      self.pos = placedObject.pos;
+      self.rect = rect;
+      self.size = 10f;
+      self.lights = new float[rect.Width * (int)(20f / self.size), rect.Height * (int)(20f / self.size), 5];
+      self.depth = 0;
+      for (int i = rect.left; i <= rect.right; i++)
+      {
+        for (int j = rect.bottom; j <= rect.top; j++)
+        {
+          if (!room.GetTile(i, j).Solid && (room.GetTile(i, j).wallbehind ? 1 : 2) > self.depth)
+          {
+            self.depth = (room.GetTile(i, j).wallbehind ? 1 : 2);
+          }
+        }
+      }
+      if (room.world.game.IsArenaSession)
+      {
+        self.broken = room.roomSettings.GetEffectAmount(RoomSettings.RoomEffect.Type.CorruptionSpores);
+      }
+      else
+      {
+        self.broken = room.roomSettings.GetEffectAmount(RoomSettings.RoomEffect.Type.CorruptionSpores);
+        if (room.world.region != null && room.world.region.name != "SS" && room.world.region.name != "UW")
+        {
+          self.broken = 1f;
+        }
+      }
+      self.gravityDependent = room.roomSettings.GetEffectAmount(RoomSettings.RoomEffect.Type.BrokenZeroG) > 0f;
+      self.power = 1f;
+      self.powerFlicker = 1f;
     }
 
     public static DangleFruit.AbstractDangleFruit get_abstrConsumable(Func<DangleFruit, DangleFruit.AbstractDangleFruit> orig, DangleFruit self)
