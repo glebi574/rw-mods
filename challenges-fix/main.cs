@@ -19,7 +19,7 @@ namespace challenges_fix
   {
     public const string PLUGIN_GUID = "gelbi.challenges_fix";
     public const string PLUGIN_NAME = "Challenges Fix";
-    public const string PLUGIN_VERSION = "1.0.2";
+    public const string PLUGIN_VERSION = "1.0.3";
 
     public void OnEnable()
     {
@@ -37,7 +37,7 @@ namespace challenges_fix
       self.placedObject = placedObject;
       self.pos = placedObject.pos;
       self.rect = rect;
-      self.size = 10f;
+      self.size = room.world.region == null ? 10f : room.world.region.regionParams.fuseSize;
       self.lights = new float[rect.Width * (int)(20f / self.size), rect.Height * (int)(20f / self.size), 5];
       self.depth = 0;
       for (int i = rect.left; i <= rect.right; i++)
