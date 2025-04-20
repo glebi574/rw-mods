@@ -14,7 +14,7 @@ namespace player_friends
   {
     public const string PLUGIN_GUID = "gelbi.player_friends";
     public const string PLUGIN_NAME = "Player Friends";
-    public const string PLUGIN_VERSION = "1.0.0";
+    public const string PLUGIN_VERSION = "1.0.1";
 
     public void OnEnable()
     {
@@ -38,7 +38,7 @@ namespace player_friends
     {
       if (creature1.world.game.Players.Count < 1 || !creature2.state.alive)
         return false;
-      CreatureTemplate.Relationship.Type relationship_type = creature1.abstractAI.RealAI.tracker.RepresentationForCreature(creature2, false)
+      CreatureTemplate.Relationship.Type relationship_type = creature1.abstractAI?.RealAI?.tracker?.RepresentationForCreature(creature2, false)
         .dynamicRelationship.currentRelationship.type;
       if (relationship_type == CreatureTemplate.Relationship.Type.Ignores || relationship_type == CreatureTemplate.Relationship.Type.Pack)
         return true;
