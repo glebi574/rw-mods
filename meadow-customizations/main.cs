@@ -19,13 +19,14 @@ namespace meadow_customizations
   {
     public const string PLUGIN_GUID = "gelbi.meadow_customizations";
     public const string PLUGIN_NAME = "Meadow Customizations";
-    public const string PLUGIN_VERSION = "1.0.0";
+    public const string PLUGIN_VERSION = "1.0.1";
 
     public PluginInterface pluginInterface;
 
     public Random rand = new Random();
-    public bool needNameUpdate = true, needBodyColorUpdate = true, needEyeColorUpdate = true, isArenaMode = false;
-    public int playerIndex = -1, deaths = 0, eyeColorCounter = 0, eyeIterator = 0;
+    public bool needNameUpdate = true, needBodyColorUpdate = true, needEyeColorUpdate = true, isArenaMode = false, wasDeadThisSession = false;
+    public int playerIndex = -1, deaths = 0, eyeColorCounter = 0, eyeIterator = 0, delayedDeathCounter = 0;
+    public double velocity = 0f;
     public string originalName;
     public OnlinePlayer me = null;
     public List<Player> killedPlayers = new List<Player>();
@@ -34,15 +35,31 @@ namespace meadow_customizations
     {
       On.RainWorld.OnModsInit += RainWorld_OnModsInit;
       On.ArenaGameSession.Update += ArenaGameSession_Update;
-      On.ArenaSitting.ctor += ArenaSitting_ctor; ;
+      On.ArenaSitting.ctor += ArenaSitting_ctor;
+      On.RainWorldGame.Update += RainWorldGame_Update;
 
       _ = new Hook(typeof(SlugcatCustomization)
         .GetMethod("MakeState"),
         (Func<Func<SlugcatCustomization, OnlineEntity, OnlineResource, OnlineEntity.EntityData.EntityDataState>,
         SlugcatCustomization, OnlineEntity, OnlineResource, OnlineEntity.EntityData.EntityDataState>)SlugcatCustomization_MakeState_Hook);
-      _ = new Hook(typeof(OnlineGameMode)
+      _ = new Hook(typeof(StoryGameMode)
         .GetMethod("PreGameStart"),
         (Action<Action<StoryGameMode>, StoryGameMode>)StoryGameMode_PreGameStart_Hook);
+      _ = new Hook(
+        typeof(OnlineManager).GetMethod("LeaveLobby", BindingFlags.Public | BindingFlags.Static),
+        (Action<Action>)OnlineManager_LeaveLobby_Hook
+);
+    }
+
+    private void RainWorldGame_Update(On.RainWorldGame.orig_Update orig, RainWorldGame self)
+    {
+      orig(self);
+      if (OnlineManager.lobby == null || self.IsArenaSession)
+        return;
+
+      foreach (AbstractCreature abstractPlayer in self.Players)
+        if (abstractPlayer?.realizedCreature?.mainBodyChunk?.vel != null && abstractPlayer.ID.number == 0)
+          UpdateVelocity(abstractPlayer.realizedCreature.mainBodyChunk.vel);
     }
 
     public void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
@@ -59,18 +76,16 @@ namespace meadow_customizations
       needBodyColorUpdate = true;
       needEyeColorUpdate = true;
       isArenaMode = false;
-    }
-
-    public void Reset()
-    {
-      NeedUpdateEverything();
-      me = null;
-      playerIndex = -1;
+      wasDeadThisSession = false;
     }
 
     public void ResetFull()
     {
-      Reset();
+      NeedUpdateEverything();
+      me = null;
+      playerIndex = -1;
+      if (pluginInterface.keepSameArenaStats.Value)
+        return;
       deaths = 0;
       killedPlayers.Clear();
     }
@@ -95,35 +110,57 @@ namespace meadow_customizations
       return false;
     }
 
+    public void UpdateVelocity(Vector2 vel)
+    {
+      double dx = vel.x, dy = vel.y - 1.5, newVelocity = (float)Math.Sqrt(dx * dx + dy * dy);
+      velocity += (newVelocity - velocity) * pluginInterface.colorSpeedMultiplier.Value / 100.0;
+    }
+
     public void ArenaGameSession_Update(On.ArenaGameSession.orig_Update orig, ArenaGameSession self)
     {
       orig(self);
       if (!pluginInterface.useCustomNickname.Value || !TryGetMyPlayer(self))
         return;
+      isArenaMode = true;
+
       foreach (AbstractCreature abstractPlayer in self.Players)
+      {
+        if (abstractPlayer.ID.number == 0)
+          UpdateVelocity(abstractPlayer.realizedCreature.mainBodyChunk.vel);
         if (abstractPlayer.realizedCreature is Player player && player.dead && player.killTag != null && player.killTag.ID.number == 0 && !killedPlayers.Contains(player))
         {
           killedPlayers.Add(player);
           needNameUpdate = true;
         }
+      }
 
-      isArenaMode = true;
-      if (deaths != self.arenaSitting.players[playerIndex].deaths)
+      if (delayedDeathCounter != self.arenaSitting.players[playerIndex].deaths)
       {
-        deaths = self.arenaSitting.players[playerIndex].deaths;
+        delayedDeathCounter = self.arenaSitting.players[playerIndex].deaths;
+        if (delayedDeathCounter != 0)
+          ++deaths;
         needNameUpdate = true;
       }
     }
 
     public void ArenaSitting_ctor(On.ArenaSitting.orig_ctor orig, ArenaSitting self, ArenaSetup.GameTypeSetup gameTypeSetup, MultiplayerUnlocks multiplayerUnlocks)
     {
-      ResetFull();
       orig(self, gameTypeSetup, multiplayerUnlocks);
+      if (OnlineManager.lobby == null)
+        return;
+      ResetFull();
+    }
+
+    public void OnlineManager_LeaveLobby_Hook(Action orig)
+    {
+      deaths = 0;
+      killedPlayers.Clear();
+      orig();
     }
 
     public void StoryGameMode_PreGameStart_Hook(Action<StoryGameMode> orig, StoryGameMode self)
     {
-      Reset();
+      NeedUpdateEverything();
       orig(self);
     }
 
@@ -139,11 +176,6 @@ namespace meadow_customizations
         if (pluginInterface.showArenaStats.Value && isArenaMode)
         {
           self.nickname += $"[{killedPlayers.Count}/{deaths}]";
-          needSpace = true;
-        }
-        if (pluginInterface.showPing.Value && me != null)
-        {
-          self.nickname += $"[{me.ping}ms]";
           needSpace = true;
         }
         if (needSpace)
@@ -178,16 +210,20 @@ namespace meadow_customizations
             if (self.eyeColor != pluginInterface.customEyeColor.Value)
               self.eyeColor = pluginInterface.customEyeColor.Value;
             break;
-          case PluginInterface.EyeColorMode.Random:
-            if (pluginInterface.eyeSwitchTimer.Value == 0 || ++eyeColorCounter % pluginInterface.eyeSwitchTimer.Value == 0)
-              self.eyeColor = new Color((float)rand.NextDouble(), (float)rand.NextDouble(), (float)rand.NextDouble());
-            break;
           case PluginInterface.EyeColorMode.RandomConstant:
             if (needEyeColorUpdate)
             {
               self.eyeColor = new Color((float)rand.NextDouble(), (float)rand.NextDouble(), (float)rand.NextDouble());
               needEyeColorUpdate = false;
             }
+            break;
+          case PluginInterface.EyeColorMode.BodyColor:
+            if (self.eyeColor != self.bodyColor)
+              self.eyeColor = self.bodyColor;
+            break;
+          case PluginInterface.EyeColorMode.Random:
+            if (pluginInterface.eyeSwitchTimer.Value == 0 || ++eyeColorCounter % pluginInterface.eyeSwitchTimer.Value == 0)
+              self.eyeColor = new Color((float)rand.NextDouble(), (float)rand.NextDouble(), (float)rand.NextDouble());
             break;
           case PluginInterface.EyeColorMode.Wave:
             float multiplier = (float)Math.Sin(++eyeIterator * pluginInterface.waveSpeed.Value / 1000.0);
@@ -196,6 +232,14 @@ namespace meadow_customizations
               dColor.r * multiplier,
               dColor.g * multiplier,
               dColor.b * multiplier);
+            break;
+          case PluginInterface.EyeColorMode.SpeedBased:
+            float velMultiplier = (float)Math.Min(1.0, Math.Sqrt(velocity / 24.0));
+            Color dVelColor = pluginInterface.customEyeWaveColor.Value - pluginInterface.customEyeColor.Value;
+            self.eyeColor = pluginInterface.customEyeColor.Value + new Color(
+              dVelColor.r * velMultiplier,
+              dVelColor.g * velMultiplier,
+              dVelColor.b * velMultiplier);
             break;
         }
 
