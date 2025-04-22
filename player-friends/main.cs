@@ -14,7 +14,7 @@ namespace player_friends
   {
     public const string PLUGIN_GUID = "gelbi.player_friends";
     public const string PLUGIN_NAME = "Player Friends";
-    public const string PLUGIN_VERSION = "1.0.1";
+    public const string PLUGIN_VERSION = "1.0.2";
 
     public void OnEnable()
     {
@@ -36,7 +36,7 @@ namespace player_friends
 
     public bool IsFriend(AbstractCreature creature1, AbstractCreature creature2)
     {
-      if (creature1.world.game.Players.Count < 1 || !creature2.state.alive)
+      if (creature1?.state == null || creature2?.state == null || creature1.world.game.Players.Count < 1 || !creature2.state.alive)
         return false;
       CreatureTemplate.Relationship.Type relationship_type = creature1.abstractAI?.RealAI?.tracker?.RepresentationForCreature(creature2, false)
         .dynamicRelationship.currentRelationship.type;
@@ -55,7 +55,8 @@ namespace player_friends
           && (communities == null || !GetCommunityLikeOfPlayer(communities, creature1, player)))
           continue;
 
-        if (social2 != null && GetLikeOfCreature(social2, player)
+        if (creature2.realizedCreature is Player player2 && !player2.isNPC && !creature1.world.game.IsArenaSession
+          || social2 != null && GetLikeOfCreature(social2, player)
           || communities != null && GetCommunityLikeOfPlayer(communities, creature2, player))
           return true;
       }
