@@ -14,7 +14,7 @@ namespace player_friends
   {
     public const string PLUGIN_GUID = "gelbi.player_friends";
     public const string PLUGIN_NAME = "Player Friends";
-    public const string PLUGIN_VERSION = "1.0.3";
+    public const string PLUGIN_VERSION = "1.0.4";
 
     public void OnEnable()
     {
@@ -66,7 +66,7 @@ namespace player_friends
           playerLike1 = GetLikeOfCreature(social1, player);
         if (creature1.realizedCreature is not Player
           && !isPlayerFriend(creature1, player)
-          && (communityLike1 < 0.7 || playerLike1 < 0.1)
+          && (communityLike1 < 0.7 || playerLike1 < -0.1)
           && playerLike1 < 0.8)
           continue;
 
@@ -74,7 +74,7 @@ namespace player_friends
           playerLike2 = GetLikeOfCreature(social2, player);
         if (creature2.realizedCreature is Player
           || isPlayerFriend(creature2, player)
-          || communityLike2 > 0.7 && playerLike2 > 0.1
+          || communityLike2 > 0.7 && playerLike2 > -0.1
           || playerLike2 > 0.8)
           return true;
       }
