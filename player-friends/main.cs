@@ -14,7 +14,7 @@ namespace player_friends
   {
     public const string PLUGIN_GUID = "gelbi.player_friends";
     public const string PLUGIN_NAME = "Player Friends";
-    public const string PLUGIN_VERSION = "1.0.5";
+    public const string PLUGIN_VERSION = "1.0.6";
 
     public void OnEnable()
     {
@@ -28,7 +28,7 @@ namespace player_friends
         communities != null
         && creature.creatureTemplate.communityID is CreatureCommunities.CommunityID communityID
         && communityID != CreatureCommunities.CommunityID.All
-        ? communities.LikeOfPlayer(communityID, player.world.region.regionNumber, player.ID.number)
+        ? communities.LikeOfPlayer(communityID, player.world.region?.regionNumber ?? 0, player.ID.number)
         : 0f;
     }
 
