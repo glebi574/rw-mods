@@ -23,7 +23,9 @@ namespace meadow_customizations
       BodyColor,
       Random,
       Wave,
-      SpeedBased
+      SpeedBased,
+      RainbowA,
+      RainbowB
     }
 
     public readonly Configurable<BodyColorMode> bodyColorMode;
@@ -146,12 +148,16 @@ namespace meadow_customizations
       (eyeColorOptions[1] as UIfocusable).greyedOut = !_use_eye_color
         || _eye_color_mode == EyeColorMode.Random
         || _eye_color_mode == EyeColorMode.RandomConstant
-        || _eye_color_mode == EyeColorMode.BodyColor;
+        || _eye_color_mode == EyeColorMode.BodyColor
+        || _eye_color_mode == EyeColorMode.RainbowA
+        || _eye_color_mode == EyeColorMode.RainbowB;
       (eyeColorOptions[3] as UIfocusable).greyedOut = !_use_eye_color
         || (_eye_color_mode != EyeColorMode.Wave
         && _eye_color_mode != EyeColorMode.SpeedBased);
       (eyeColorOptions[5] as UIfocusable).greyedOut = !_use_eye_color
-        || _eye_color_mode != EyeColorMode.Wave;
+        || _eye_color_mode != EyeColorMode.Wave
+        && _eye_color_mode != EyeColorMode.RainbowA
+        && _eye_color_mode != EyeColorMode.RainbowB;
       (eyeColorOptions[7] as UIfocusable).greyedOut = !_use_eye_color
         || _eye_color_mode != EyeColorMode.Random;
       (eyeColorOptions[9] as UIfocusable).greyedOut = !_use_eye_color
