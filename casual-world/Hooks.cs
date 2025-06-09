@@ -50,15 +50,32 @@ namespace casual_world
       On.Leech.LeechSchool.AddPrey += LeechSchool_AddPrey;
       On.MirosBirdAI.DoIWantToBiteCreature += MirosBirdAI_DoIWantToBiteCreature;
       On.PoleMimic.Act += PoleMimic_Act;
+      On.WormGrass.WormGrassPatch.InteractWithCreature += WormGrassPatch_InteractWithCreature;
+      On.WormGrass.Worm.Attach += Worm_Attach;
     }
 
-    private void PoleMimic_Act(On.PoleMimic.orig_Act orig, PoleMimic self)
+    public void Worm_Attach(On.WormGrass.Worm.orig_Attach orig, WormGrass.Worm self, BodyChunk chunk)
+    {
+      if (IgnoreCondition(chunk.owner.abstractPhysicalObject as AbstractCreature))
+        orig(self, chunk);
+    }
+
+    public void WormGrassPatch_InteractWithCreature(On.WormGrass.WormGrassPatch.orig_InteractWithCreature orig, WormGrass.WormGrassPatch self, WormGrass.WormGrassPatch.CreatureAndPull creatureAndPull)
+    {
+      orig(self, creatureAndPull);
+      if (IgnoreCondition(creatureAndPull.creature.abstractCreature))
+        return;
+      creatureAndPull.bury = -1f;
+      creatureAndPull.pull = -1f;
+    }
+
+    public void PoleMimic_Act(On.PoleMimic.orig_Act orig, PoleMimic self)
     {
       self.tipAttached = true;
       self.wantToWakeUp = false;
     }
 
-    private bool MirosBirdAI_DoIWantToBiteCreature(On.MirosBirdAI.orig_DoIWantToBiteCreature orig, MirosBirdAI self, AbstractCreature creature)
+    public bool MirosBirdAI_DoIWantToBiteCreature(On.MirosBirdAI.orig_DoIWantToBiteCreature orig, MirosBirdAI self, AbstractCreature creature)
     {
       return IgnoreCondition(creature) && orig(self, creature);
     }

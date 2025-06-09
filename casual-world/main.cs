@@ -15,7 +15,7 @@ namespace casual_world
   {
     public const string PLUGIN_GUID = "gelbi.casual_world";
     public const string PLUGIN_NAME = "Casual World";
-    public const string PLUGIN_VERSION = "1.0.0";
+    public const string PLUGIN_VERSION = "1.0.1";
 
     public PluginInterface pluginInterface;
     public Hooks hooks;
