@@ -1,13 +1,15 @@
 ﻿using BepInEx;
+using BepInEx.Logging;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
-using Debug = UnityEngine.Debug;
+using Watcher;
 
 namespace slugsprites
 {
@@ -21,7 +23,7 @@ namespace slugsprites
   {
     public const string PLUGIN_GUID = "gelbi.slugsprites";
     public const string PLUGIN_NAME = "SlugSprites";
-    public const string PLUGIN_VERSION = "0.2.0";
+    public const string PLUGIN_VERSION = "0.2.1";
 
     public static bool isInit = false;
 
@@ -37,13 +39,38 @@ namespace slugsprites
     public static event AddToContainerD OnAddToContainer;
     public static event ApplyPaletteD OnApplyPalette;
 
+    public static PluginInterface pluginInterface;
+
     public void OnEnable()
     {
       if (isInit)
         return;
       isInit = true;
 
-      On.RainWorld.PostModsInit += RainWorld_PostModsInit;
+      try
+      {
+        On.RainWorld.OnModsInit += RainWorld_OnModsInit;
+        On.RainWorld.PostModsInit += RainWorld_PostModsInit;
+      }
+      catch (Exception e)
+      {
+        Logger.LogError(e);
+      }
+    }
+
+    public void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
+    {
+      orig(self);
+
+      try
+      {
+        pluginInterface = new PluginInterface();
+        MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
+      }
+      catch (Exception e)
+      {
+        Logger.LogError(e);
+      }
     }
 
     public void RainWorld_PostModsInit(On.RainWorld.orig_PostModsInit orig, RainWorld self)
@@ -64,6 +91,7 @@ namespace slugsprites
         On.PlayerGraphics.InitCachedSpriteNames += PlayerGraphics_InitCachedSpriteNames;
         On.PlayerGraphics.AddToContainer += PlayerGraphics_AddToContainer;
         On.PlayerGraphics.ApplyPalette += PlayerGraphics_ApplyPalette;
+        On.RainWorld.Update += RainWorld_Update;
 
         IL.PlayerGraphics.InitiateSprites += PlayerGraphics_InitiateSprites;
         IL.PlayerGraphics.DrawSprites += PlayerGraphics_DrawSprites;
@@ -72,6 +100,28 @@ namespace slugsprites
       {
         Logger.LogError(e);
       }
+    }
+
+    public void RainWorld_Update(On.RainWorld.orig_Update orig, RainWorld self)
+    {
+      orig(self);
+      if (!pluginInterface.debugMode.Value)
+        return;
+
+      if (!Input.GetKeyDown(pluginInterface.reloadKey.Value))
+        return;
+      SpriteHandler.LoadCustomSprites();
+      if (self.processManagerInitialized && self.processManager.currentMainLoop is RainWorldGame game)
+        foreach (AbstractCreature player in game.Players)
+          if (SpriteHandler.managedPlayers.TryGetValue(player.realizedCreature as Player, out ManagedPlayerData managedPlayer))
+          {
+            managedPlayer.sLeaser.RemoveAllSpritesFromContainer();
+            (player.realizedCreature.graphicsModule as PlayerGraphics).InitCachedSpriteNames();
+            player.realizedCreature.graphicsModule.InitiateSprites(managedPlayer.sLeaser, managedPlayer.rCam);
+            player.realizedCreature.graphicsModule.ApplyPalette(managedPlayer.sLeaser, managedPlayer.rCam, managedPlayer.rCam.currentPalette);
+            if (managedPlayer.rCam.rippleData != null)
+              CosmeticRipple.ReplaceBasicShader(managedPlayer.sLeaser.sprites);
+          }
     }
 
     public void PlayerGraphics_DrawSprites(ILContext il)
