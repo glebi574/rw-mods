@@ -9,6 +9,7 @@ using SlugBase.DataTypes;
 using BepInEx;
 using static slugsprites.LogWrapper;
 using System.Runtime.CompilerServices;
+using UnityEngine.Events;
 
 namespace slugsprites
 {
@@ -79,7 +80,8 @@ namespace slugsprites
         sprite._y = baseSprite._y;
         sprite._scaleX = baseSprite._scaleX;
         sprite._scaleY = baseSprite._scaleY;
-        sprite._rotation = baseSprite._rotation;
+        sprite._anchorX = baseSprite._anchorX;
+        sprite._anchorY = baseSprite._anchorY;
         sprite._isMatrixDirty = baseSprite._isMatrixDirty;
         if (spriteData.groupIndex != _sprite.ipixel)
           continue;
@@ -98,7 +100,7 @@ namespace slugsprites
       if (!firstSprite.previousBaseSprite.CheckSpriteChange(newName))
         return;
       firstSprite.previousBaseSprite = newName;
-      string suffix = newName.Substring(firstSprite.baseSprite.Length);
+      string suffix = newName.Substring(newName[newName.Length - 1] == 'd' ? 4 : firstSprite.baseSprite.Length);
       foreach (SlugSpriteData spriteData in self)
         sLeaser.sprites[spriteData.realIndex].element = Futile.atlasManager.GetElementWithName(spriteData.sprite + suffix);
     }
@@ -115,6 +117,22 @@ namespace slugsprites
       return self[a] != other[a--]
           || self[a] != other[a--]
           || self[a] != other[a];
+    }
+
+    /// <summary>
+    /// Returns additional sprite with same base name
+    /// </summary>
+    public static SlugSpriteData GetSprite(this List<SlugSpriteData> self, string sprite)
+    {
+      return self.FirstOrDefault(s => s.sprite == sprite);
+    }
+
+    /// <summary>
+    /// Returns additional sprite with same base or default name
+    /// </summary>
+    public static SlugSpriteData GetSpriteFull(this List<SlugSpriteData> self, string sprite)
+    {
+      return self.FirstOrDefault(s => s.sprite == sprite || s.sprite == s.defaultSprite);
     }
   }
 
@@ -184,10 +202,10 @@ namespace slugsprites
         * (1f + (Mathf.Sin((float)(segment * Math.PI / length)) * roundness));
     }
 
-    public static void InitCachedSpriteNames(PlayerGraphics self)
+    public static SlugcatSprites InitCachedSpriteNames(PlayerGraphics self)
     {
       if (!self.TryGetSupportedSlugcat(out SlugcatSprites sprites))
-        return;
+        return null;
 
       if (sprites.BaseFace != null)
         self._cachedFaceSpriteNames = new AGCachedStrings3Dim(new string[] { sprites.BaseFace.sprite, "PFace" }, new string[] { "A", "B", "C", "D", "E" }, 9);
@@ -203,6 +221,8 @@ namespace slugsprites
         self._cachedLegsAClimbing = new AGCachedStrings($"{legsSpriteA}Climbing", 31);
         self._cachedLegsAOnPole = new AGCachedStrings($"{legsSpriteA}OnPole", 31);
       }
+
+      return sprites;
 
       // If I figure out, how to retrieve indexes, can use the instead(just big IL hook, which I'm lazy to do)
       // getting needed name part from base sprite works fine so far
@@ -228,10 +248,10 @@ namespace slugsprites
       //  }
     }
 
-    public static void InitiateSprites(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser)
+    public static SlugcatSprites InitiateSprites(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser)
     {
       if (!self.TryGetSupportedSlugcat(out SlugcatSprites sprites))
-        return;
+        return null;
 
       int baseLength, newLength = baseLength = sLeaser.sprites.Length;
       foreach (List<SlugSpriteData> partSprites in sprites.additionalSprites)
@@ -293,10 +313,26 @@ namespace slugsprites
       }
 
       if (sprites.additionalSprites.Length != 0)
-        sprites.colors = new Color[sprites.colorAmount + 1];
+        sprites.colors = new Color[sprites.colorAmount];
+
+      // Use default colour sets, when they can't be customized
+      if (self.owner.room.game.session is ArenaGameSession || self.owner.room.game.session is StoryGameSession
+        && self.useJollyColor && RWCustom.Custom.rainWorld.options.jollyColorMode == Options.JollyColorMode.AUTO)
+        for (int i = 0; i < sprites.colorAmount; ++i)
+          sprites.colors[i] = sprites.colorSets[(self.owner as Player).playerState.playerNumber % 4][i];
+      // Use SlugBase colours if it's present
+      else if (Plugin.isSlugBaseActive && SlugBase.SlugBaseCharacter.Registry.Keys.Contains(sprites.owner))
+        for (int i = 0; i < sprites.colorAmount; ++i)
+          sprites.colors[i] = PlayerColor.GetCustomColor(self, i);
+      // Use existing custom colours, if SlugBase isn't present
+      else if (PlayerGraphics.CustomColorsEnabled())
+        for (int i = 0; i < sprites.colorAmount; ++i)
+          sprites.colors[i] = PlayerGraphics.customColors[i];
+      
+      return sprites;
     }
 
-    public static void DrawSprites(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos)
+    public static SlugcatSprites DrawSprites(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos)
     {
       if (Plugin.pluginInterface.debugMode.Value)
       {
@@ -306,7 +342,7 @@ namespace slugsprites
       }
 
       if (!self.TryGetSupportedSlugcat(out SlugcatSprites sprites))
-        return;
+        return null;
 
       foreach (List<SlugSpriteData> spriteList in sprites.additionalUpdatable)
         spriteList?.UpdateStates(sLeaser);
@@ -336,12 +372,14 @@ namespace slugsprites
       sprites.CustomArm1?.UpdateElements(sLeaser);
       sprites.CustomArm2?.UpdateElements(sLeaser);
       sprites.CustomLegs?.UpdateElements(sLeaser);
+
+      return sprites;
     }
 
-    public static void AddToContainer(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, FContainer newContatiner)
+    public static SlugcatSprites AddToContainer(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, FContainer newContatiner)
     {
       if (!self.TryGetSupportedSlugcat(out SlugcatSprites sprites))
-        return;
+        return null;
 
       newContatiner ??= rCam.ReturnFContainer("Midground");
       for (int i = sprites.firstSpriteIndex; i < sLeaser.sprites.Length; ++i)
@@ -351,21 +389,25 @@ namespace slugsprites
         spriteList?.UpdateNodes(sLeaser, spriteList[0].groupIndex);
       sprites.CustomTail?.UpdateNodes(sLeaser, _sprite.itail);
       sprites.CustomOther?.UpdateNodes(sLeaser, _sprite.ibody);
+
+      return sprites;
     }
 
-    public static void ApplyPalette(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, RoomPalette palette)
+    public static SlugcatSprites ApplyPalette(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, RoomPalette palette)
     {
       if (!self.TryGetSupportedSlugcat(out SlugcatSprites sprites))
-        return;
-
-      for (int i = 0; i < sprites.colorAmount; ++i)
-        sprites.colors[i] = PlayerColor.GetCustomColor(self, i);
+        return null;
 
       foreach (List<SlugSpriteData> partSprites in sprites.additionalSprites)
         if (partSprites != null)
           foreach (SlugSpriteData spriteData in partSprites)
             if (spriteData.colorIndex != -1)
-              sLeaser.sprites[spriteData.realIndex].color = sprites.colors[spriteData.colorIndex];
+            {
+              Color? color = sprites.colors[spriteData.colorIndex];
+              sLeaser.sprites[spriteData.realIndex].color = color ?? spriteData.defaultColor;
+            }
+
+      return sprites;
     }
 
     public static List<string> loadedAtlases = new();
@@ -405,7 +447,7 @@ namespace slugsprites
               Log.LogInfo($"Loading sprites for {slugcatSprites.Key}");
               try
               {
-                customSprites[slugcatName] = new(slugcatSprites.Value as Dictionary<string, object>);
+                customSprites[slugcatName] = new(slugcatSprites.Value as Dictionary<string, object>) { owner = slugcatName };
               }
               catch (Exception ei)
               {
@@ -431,7 +473,9 @@ namespace slugsprites
   {
     public static readonly string[] supportedSprites = new string[] { _sprite.body, _sprite.hips, _sprite.tail, _sprite.head, _sprite.legs,
       _sprite.arm, _sprite.terrainHand, _sprite.face, _sprite.pixel, _sprite.other };
+    public SlugcatStats.Name owner;
     public Color[] colors;
+    public Color[][] colorSets;
     public SlugSpriteData[] baseSprites = new SlugSpriteData[_sprite.groups.Length],
       baseUpdatable = new SlugSpriteData[_sprite.groups.Length - 2];
     public List<SlugSpriteData>[] additionalSprites = new List<SlugSpriteData>[_sprite.groups.Length],
@@ -439,6 +483,7 @@ namespace slugsprites
     public int firstSpriteIndex = 0, tailLength = 3, tailWideness = 1, colorAmount = 0;
     public float tailRoundness = 1f;
 
+    #region
     public SlugSpriteData BaseBody => baseSprites[_sprite.ibody];
     public SlugSpriteData BaseHips => baseSprites[_sprite.ihips];
     public SlugSpriteData BaseTail => baseSprites[_sprite.itail];
@@ -463,9 +508,11 @@ namespace slugsprites
     public List<SlugSpriteData> CustomFace => additionalSprites[_sprite.iface];
     public List<SlugSpriteData> CustomPixel => additionalSprites[_sprite.ipixel];
     public List<SlugSpriteData> CustomOther => additionalSprites[_sprite.iother];
+    #endregion
 
     public SlugcatSprites(Dictionary<string, object> sprites)
     {
+      // Loading supported fields
       if (sprites.TryGetValueWithType("atlases", out string folderPath))
         SpriteHandler.LoadAtlases($"slugsprites/{folderPath}");
       else
@@ -473,6 +520,20 @@ namespace slugsprites
       sprites.TryUpdateNumber("tailLength", ref tailLength);
       sprites.TryUpdateNumber("tailWideness", ref tailWideness);
       sprites.TryUpdateNumber("tailRoundness", ref tailRoundness);
+      if (sprites.TryGetValueWithType("colorSets", out List<object> colorListSet))
+      {
+        if (colorListSet.Count != 4)
+          throw new Exception($"Expected 4 color sets in \"colorSets\"");
+        colorSets = new Color[colorListSet.Count][];
+        colorSets[0] = (colorListSet[0] as List<object>).ToRGBColorArray();
+        for (int i = 1; i < 4; ++i)
+        {
+          colorSets[i] = (colorListSet[i] as List<object>).ToRGBColorArray();
+          if (colorSets[i].Length != colorSets[0].Length)
+            throw new Exception($"Inconsistent amount of colors in \"colorSets\"");
+        }
+      }
+      // Loading supported sprite groups
       foreach (string field in supportedSprites)
         if (sprites.TryGetValueWithType(field, out List<object> spriteSet))
         {
@@ -503,6 +564,8 @@ namespace slugsprites
                   }
                   throw new Exception($"\"{spriteName}\" doesn't exist{additionalInfo}");
                 }
+                if (groupIndex == _sprite.iother && spriteData.order == 0)
+                  throw new Exception($"can't have sprite of this group with order 0");
 
                 spriteData.defaultSprite = spriteName;
                 colorAmount = Math.Max(colorAmount, spriteData.colorIndex);
@@ -544,6 +607,7 @@ namespace slugsprites
     public float? anchorX, anchorY, scaleX, scaleY, rotation;
     public bool areLocalVerticesDirty = false, isMatrixDirty = false;
     public string sprite = "Futile_White", defaultSprite, baseSprite, previousBaseSprite = "";
+    public Color defaultColor = Color.white;
     //public AGCachedStrings3Dim _cachedFaceSpriteNames;
     //public AGCachedStrings2Dim _cachedHeads;
     //public AGCachedStrings _cachedPlayerArms, _cachedLegsA, _cachedLegsACrawling, _cachedLegsAClimbing, _cachedLegsAOnPole;
@@ -554,6 +618,9 @@ namespace slugsprites
       if (!spriteData.TryGetValueWithType("sprite", out sprite))
         throw new Exception($"Sprite configuration with order {order} is missing \"sprite\" field");
       spriteData.TryUpdateNumber("colorIndex", ref colorIndex);
+      if (colorIndex < -1)
+        throw new Exception($"Sprite configuration with order {order} has incorrect value of \"colorIndex\" - must be greater than -2");
+      spriteData.TryUpdateColorFromHex("defaultColor", ref defaultColor);
       if (spriteData.TryGetNumber("anchorX", out float _anchorX))
         anchorX = _anchorX;
       if (spriteData.TryGetNumber("anchorY", out float _anchorY))

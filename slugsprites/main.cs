@@ -23,15 +23,16 @@ namespace slugsprites
   {
     public const string PLUGIN_GUID = "gelbi.slugsprites";
     public const string PLUGIN_NAME = "SlugSprites";
-    public const string PLUGIN_VERSION = "0.2.1";
+    public const string PLUGIN_VERSION = "0.2.2";
 
     public static bool isInit = false;
+    public static bool isSlugBaseActive = false;
 
-    public delegate void InitCachedSpriteNamesD(PlayerGraphics self);
-    public delegate void InitiateSpritesD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser);
-    public delegate void DrawSpritesD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos);
-    public delegate void AddToContainerD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, FContainer newContatiner);
-    public delegate void ApplyPaletteD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, RoomPalette palette);
+    public delegate void InitCachedSpriteNamesD(PlayerGraphics self, SlugcatSprites sprites);
+    public delegate void InitiateSpritesD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites);
+    public delegate void DrawSpritesD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites);
+    public delegate void AddToContainerD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, FContainer newContatiner, SlugcatSprites sprites);
+    public delegate void ApplyPaletteD(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, RoomPalette palette, SlugcatSprites sprites);
 
     public static event InitCachedSpriteNamesD OnInitCachedSpriteNames;
     public static event InitiateSpritesD OnInitiateSprites;
@@ -82,11 +83,12 @@ namespace slugsprites
         LogWrapper.Log = Logger;
         SpriteHandler.LoadCustomSprites();
 
-        OnInitCachedSpriteNames += SpriteHandler.InitCachedSpriteNames;
-        OnInitiateSprites += SpriteHandler.InitiateSprites;
-        OnDrawSprites += SpriteHandler.DrawSprites;
-        OnAddToContainer += SpriteHandler.AddToContainer;
-        OnApplyPalette += SpriteHandler.ApplyPalette;
+        foreach (ModManager.Mod mod in ModManager.ActiveMods)
+          if (mod.id == "slime-cubed.slugbase")
+          {
+            isSlugBaseActive = true;
+            break;
+          }
 
         On.PlayerGraphics.InitCachedSpriteNames += PlayerGraphics_InitCachedSpriteNames;
         On.PlayerGraphics.AddToContainer += PlayerGraphics_AddToContainer;
@@ -175,29 +177,34 @@ namespace slugsprites
     public void PlayerGraphics_InitCachedSpriteNames(On.PlayerGraphics.orig_InitCachedSpriteNames orig, PlayerGraphics self)
     {
       orig(self);
-      OnInitCachedSpriteNames.Invoke(self);
+      SlugcatSprites sprites = SpriteHandler.InitCachedSpriteNames(self);
+      OnInitCachedSpriteNames?.Invoke(self, sprites);
     }
 
     public static void InitiateSprites_Wrapper(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser)
     {
-      OnInitiateSprites.Invoke(self, sLeaser);
+      SlugcatSprites sprites = SpriteHandler.InitiateSprites(self, sLeaser);
+      OnInitiateSprites?.Invoke(self, sLeaser, sprites);
     }
 
     public static void DrawSprites_Wrapper(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos)
     {
-      OnDrawSprites.Invoke(self, sLeaser, rCam, timeStacker, camPos);
+      SlugcatSprites sprites = SpriteHandler.DrawSprites(self, sLeaser, rCam, timeStacker, camPos);
+      OnDrawSprites?.Invoke(self, sLeaser, rCam, timeStacker, camPos, sprites);
     }
 
     public void PlayerGraphics_AddToContainer(On.PlayerGraphics.orig_AddToContainer orig, PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, FContainer newContatiner)
     {
       orig(self, sLeaser, rCam, newContatiner);
-      OnAddToContainer.Invoke(self, sLeaser, rCam, newContatiner);
+      SlugcatSprites sprites = SpriteHandler.AddToContainer(self, sLeaser, rCam, newContatiner);
+      OnAddToContainer?.Invoke(self, sLeaser, rCam, newContatiner, sprites);
     }
 
     public void PlayerGraphics_ApplyPalette(On.PlayerGraphics.orig_ApplyPalette orig, PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, RoomPalette palette)
     {
       orig(self, sLeaser, rCam, palette);
-      OnApplyPalette.Invoke(self, sLeaser, rCam, palette);
+      SlugcatSprites sprites = SpriteHandler.ApplyPalette(self, sLeaser, rCam, palette);
+      OnApplyPalette?.Invoke(self, sLeaser, rCam, palette, sprites);
     }
   }
 }
