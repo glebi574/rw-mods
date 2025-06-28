@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -98,6 +99,23 @@ namespace gelbi_silly_lib
         result = value;
     }
 
+    public static bool TryGetColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, out Color result)
+    {
+      if (self.TryGetValueWithType(name, out string value))
+      {
+        result = value.AsRGBAColor();
+        return true;
+      }
+      result = default;
+      return false;
+    }
+
+    public static void TryUpdateColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, ref Color result)
+    {
+      if (self.TryGetColorFromHex(name, out Color value))
+        result = value;
+    }
+
     public static bool TryGetExtEnum<T>(this string self, out T result, bool ignoreCase = false) where T : ExtEnum<T>
     {
       if (ExtEnumBase.TryParse(typeof(T), self, ignoreCase, out ExtEnumBase value)
@@ -150,6 +168,34 @@ namespace gelbi_silly_lib
         result = value;
     }
 
+    public static Color AsRGBColor(this string hex)
+    {
+      uint rgb = uint.Parse(hex, NumberStyles.HexNumber);
+      return new(((rgb >> 16) & 0xff) / 255f, ((rgb >> 8) & 0xff) / 255f, (rgb & 0xff) / 255f);
+    }
+
+    public static Color AsRGBAColor(this string hex)
+    {
+      uint rgba = uint.Parse(hex, NumberStyles.HexNumber);
+      return new(((rgba >> 24) & 0xff) / 255f, ((rgba >> 16) & 0xff) / 255f, ((rgba >> 8) & 0xff) / 255f, (rgba & 0xff) / 255f);
+    }
+
+    public static Color[] ToRGBColorArray(this List<object> self)
+    {
+      Color[] colors = new Color[self.Count];
+      for (int i = 0; i < self.Count; ++i)
+        colors[i] = (self[i] as string).AsRGBColor();
+      return colors;
+    }
+
+    public static Color[] ToRGBAColorArray(this List<object> self)
+    {
+      Color[] colors = new Color[self.Count];
+      for (int i = 0; i < self.Count; ++i)
+        colors[i] = (self[i] as string).AsRGBAColor();
+      return colors;
+    }
+
     public static List<AbstractCreature> GetCreaturesWithType(this List<AbstractCreature> creatures, CreatureTemplate.Type type)
     {
       List<AbstractCreature> result = new();
@@ -174,7 +220,7 @@ namespace gelbi_silly_lib
   {
     public const string PLUGIN_GUID = "gelbi.gelbi-silly-lib";
     public const string PLUGIN_NAME = "gelbi's Silly Lib";
-    public const string PLUGIN_VERSION = "1.0.0";
+    public const string PLUGIN_VERSION = "1.0.1";
 
     public void OnEnable()
     {
