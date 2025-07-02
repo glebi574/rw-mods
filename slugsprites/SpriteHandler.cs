@@ -16,11 +16,42 @@ namespace slugsprites
   public static class Extensions
   {
     /// <summary>
+    /// Clones SlugSpriteData[]
+    /// </summary>
+    public static void CloneFrom(this SlugSpriteData[] self, SlugSpriteData[] other)
+    {
+      for (int i = 0; i < self.Length; ++i)
+        if (other[i] != null)
+          self[i] = new(other[i]);
+    }
+
+    /// <summary>
+    /// Clones List<SlugSpriteData>[]
+    /// </summary>
+    public static void CloneFrom(this List<SlugSpriteData>[] self, List<SlugSpriteData>[] other)
+    {
+      for (int i = 0; i < self.Length; ++i)
+        if (other[i] != null)
+        {
+          self[i] = new();
+          foreach (SlugSpriteData spriteData in other[i])
+            self[i].Add(new(spriteData));
+        }
+    }
+
+    /// <summary>
     /// Returns custom sprites for slugcat, if they exist
     /// </summary>
     public static bool TryGetSupportedSlugcat(this PlayerGraphics self, out SlugcatSprites sprites)
     {
-      return SpriteHandler.customSprites.TryGetValue((self.owner as Player).slugcatStats.name, out sprites);
+      Player player = self.owner as Player;
+      if (SpriteHandler.customSprites.TryGetValue(player.slugcatStats.name, out SlugcatSprites baseSprites))
+      {
+        sprites = SpriteHandler.playerSprites.GetValue(player, k => new(baseSprites));
+        return true;
+      }
+      sprites = null;
+      return false;
     }
 
     /// <summary>
@@ -38,12 +69,12 @@ namespace slugsprites
         spriteData.baseSprite = baseSpriteName;
         FSprite newSprite = sLeaser.sprites[spriteData.realIndex] = new FSprite(spriteData.defaultSprite),
           baseSprite = sLeaser.sprites[baseIndex];
-        newSprite._anchorX = spriteData.anchorX ?? baseSprite._anchorX;
-        newSprite._anchorY = spriteData.anchorY ?? baseSprite._anchorY;
+        newSprite._anchorX = baseSprite._anchorX;
+        newSprite._anchorY = baseSprite._anchorY;
         newSprite._areLocalVerticesDirty = spriteData.areLocalVerticesDirty || baseSprite._areLocalVerticesDirty;
-        newSprite._scaleX = spriteData.scaleX ?? baseSprite._scaleX;
-        newSprite._scaleY = spriteData.scaleY ?? baseSprite._scaleY;
-        newSprite._rotation = spriteData.rotation ?? baseSprite._rotation;
+        newSprite._scaleX = baseSprite._scaleX;
+        newSprite._scaleY = baseSprite._scaleY;
+        newSprite._rotation = baseSprite._rotation;
         newSprite._isMatrixDirty = spriteData.isMatrixDirty || baseSprite._isMatrixDirty;
       }
     }
@@ -78,11 +109,13 @@ namespace slugsprites
           baseSprite = sLeaser.sprites[spriteData.groupIndex];
         sprite._x = baseSprite._x;
         sprite._y = baseSprite._y;
-        sprite._scaleX = baseSprite._scaleX;
-        sprite._scaleY = baseSprite._scaleY;
-        sprite._anchorX = baseSprite._anchorX;
-        sprite._anchorY = baseSprite._anchorY;
-        sprite._isMatrixDirty = baseSprite._isMatrixDirty;
+        sprite._scaleX = baseSprite._scaleX * spriteData.scaleX;
+        sprite._scaleY = baseSprite._scaleY * spriteData.scaleY;
+        sprite._anchorX = baseSprite._anchorX + spriteData.anchorX;
+        sprite._anchorY = baseSprite._anchorY + spriteData.anchorY;
+        sprite._rotation = baseSprite._rotation + spriteData.rotation;
+        sprite._isMatrixDirty = spriteData.isMatrixDirty || baseSprite._isMatrixDirty;
+        sprite._areLocalVerticesDirty = spriteData.areLocalVerticesDirty || baseSprite._areLocalVerticesDirty;
         if (spriteData.groupIndex != _sprite.ipixel)
           continue;
         sprite.alpha = baseSprite.alpha;
@@ -175,6 +208,9 @@ namespace slugsprites
   public class SpriteHandler
   {
     public static ConditionalWeakTable<Player, ManagedPlayerData> managedPlayers = new();
+    public static Dictionary<SlugcatStats.Name, SlugcatSprites> customSprites = new();
+    public static ConditionalWeakTable<Player, SlugcatSprites> playerSprites = new();
+    public static List<string> loadedAtlases = new();
 
     // Some magic from DMS
     public static void MapTailUV(TriangleMesh tail)
@@ -316,8 +352,8 @@ namespace slugsprites
         sprites.colors = new Color[sprites.colorAmount];
 
       // Use default colour sets, when they can't be customized
-      if (self.owner.room.game.session is ArenaGameSession || self.owner.room.game.session is StoryGameSession
-        && self.useJollyColor && RWCustom.Custom.rainWorld.options.jollyColorMode == Options.JollyColorMode.AUTO)
+      if (sprites.colorSets != null && (self.owner.room.game.session is ArenaGameSession || self.owner.room.game.session is StoryGameSession
+        && self.useJollyColor && RWCustom.Custom.rainWorld.options.jollyColorMode == Options.JollyColorMode.AUTO))
         for (int i = 0; i < sprites.colorAmount; ++i)
           sprites.colors[i] = sprites.colorSets[(self.owner as Player).playerState.playerNumber % 4][i];
       // Use SlugBase colours if it's present
@@ -328,7 +364,17 @@ namespace slugsprites
       else if (PlayerGraphics.CustomColorsEnabled())
         for (int i = 0; i < sprites.colorAmount; ++i)
           sprites.colors[i] = PlayerGraphics.customColors[i];
-      
+
+      foreach (SlugSpriteData spriteData in sprites.baseSprites)
+        if (spriteData != null)
+          foreach (Animation animation in spriteData.animations)
+            animation.Initiate(self, sLeaser, sprites, spriteData);
+      foreach (List<SlugSpriteData> spriteList in sprites.additionalSprites)
+        if (spriteList != null)
+          foreach (SlugSpriteData spriteData in spriteList)
+            foreach (Animation animation in spriteData.animations)
+              animation.Initiate(self, sLeaser, sprites, spriteData);
+
       return sprites;
     }
 
@@ -354,6 +400,9 @@ namespace slugsprites
             baseSprite = sLeaser.sprites[_sprite.ibody];
           sprite._x = baseSprite._x;
           sprite._y = baseSprite._y;
+          sprite._rotation = baseSprite._rotation;
+          sprite._isMatrixDirty = baseSprite._isMatrixDirty;
+          sprite._areLocalVerticesDirty = baseSprite._areLocalVerticesDirty;
         }
 
       if (sprites.CustomTail != null)
@@ -372,6 +421,16 @@ namespace slugsprites
       sprites.CustomArm1?.UpdateElements(sLeaser);
       sprites.CustomArm2?.UpdateElements(sLeaser);
       sprites.CustomLegs?.UpdateElements(sLeaser);
+
+      foreach (SlugSpriteData spriteData in sprites.baseSprites)
+        if (spriteData != null)
+          foreach (Animation animation in spriteData.animations)
+            animation.Update(self, sLeaser, rCam, timeStacker, camPos, sprites, spriteData);
+      foreach (List<SlugSpriteData> spriteList in sprites.additionalSprites)
+        if (spriteList != null)
+          foreach (SlugSpriteData spriteData in spriteList)
+            foreach (Animation animation in spriteData.animations)
+              animation.Update(self, sLeaser, rCam, timeStacker, camPos, sprites, spriteData);
 
       return sprites;
     }
@@ -402,15 +461,10 @@ namespace slugsprites
         if (partSprites != null)
           foreach (SlugSpriteData spriteData in partSprites)
             if (spriteData.colorIndex != -1)
-            {
-              Color? color = sprites.colors[spriteData.colorIndex];
-              sLeaser.sprites[spriteData.realIndex].color = color ?? spriteData.defaultColor;
-            }
+              sLeaser.sprites[spriteData.realIndex].color = sprites.colors[spriteData.colorIndex];
 
       return sprites;
     }
-
-    public static List<string> loadedAtlases = new();
 
     public static void UnloadAtlases()
     {
@@ -432,11 +486,15 @@ namespace slugsprites
 
     public static void LoadCustomSprites()
     {
-      Log.LogInfo("Loading custom sprites");
-      UnloadAtlases();
-      customSprites.Clear();
       try
       {
+        AnimationHandler.LoadAnimations();
+
+        Log.LogInfo("Loading custom sprites");
+        UnloadAtlases();
+        customSprites.Clear();
+        playerSprites = new();
+
         foreach (string path in AssetManager.ListDirectory("slugsprites"))
         {
           Log.LogInfo($"Reading at: {path}");
@@ -447,6 +505,8 @@ namespace slugsprites
               Log.LogInfo($"Loading sprites for {slugcatSprites.Key}");
               try
               {
+                if (customSprites.ContainsKey(slugcatName))
+                  Log.LogWarning($"Overriding configuration for {slugcatName} - multiple configurations for this slugcat are present");
                 customSprites[slugcatName] = new(slugcatSprites.Value as Dictionary<string, object>) { owner = slugcatName };
               }
               catch (Exception ei)
@@ -458,15 +518,13 @@ namespace slugsprites
               Log.LogError($"Failed to find slugcat with name {slugcatSprites.Key}");
           }
         }
-        Log.LogInfo($"Finished reading");
+        Log.LogInfo($"Finished loading sprites");
       }
       catch (Exception e)
       {
         Log.LogError(e);
       }
     }
-
-    public static Dictionary<SlugcatStats.Name, SlugcatSprites> customSprites = new();
   }
 
   public class SlugcatSprites
@@ -591,6 +649,28 @@ namespace slugsprites
       if (additionalSprites.Length != 0)
         ++colorAmount;
 
+      SetUpdatableSpriteSets();
+    }
+
+    public SlugcatSprites(SlugcatSprites other)
+    {
+      owner = other.owner;
+      tailLength = other.tailLength;
+      tailWideness = other.tailWideness;
+      tailRoundness = other.tailRoundness;
+      colorAmount = other.colorAmount;
+
+      colorSets = new Color[other.colorSets.Length][];
+      for (int i = 0; i < other.colorSets.Length; ++i)
+        colorSets[i] = (Color[])other.colorSets[i].Clone();
+
+      baseSprites.CloneFrom(other.baseSprites);
+      additionalSprites.CloneFrom(other.additionalSprites);
+      SetUpdatableSpriteSets();
+    }
+
+    public void SetUpdatableSpriteSets()
+    {
       for (int i = 0; i < baseUpdatable.Length; ++i)
       {
         baseUpdatable[i] = baseSprites[i];
@@ -604,10 +684,13 @@ namespace slugsprites
   public class SlugSpriteData
   {
     public int order = 0, realIndex = 0, colorIndex = -1, groupIndex = 0;
-    public float? anchorX, anchorY, scaleX, scaleY, rotation;
+    public float anchorX = 0f, anchorY = 0f, scaleX = 1f, scaleY = 1f, rotation = 0f;
     public bool areLocalVerticesDirty = false, isMatrixDirty = false;
     public string sprite = "Futile_White", defaultSprite, baseSprite, previousBaseSprite = "";
-    public Color defaultColor = Color.white;
+    public List<Animation> animations = new();
+    public AnimationColor animationColor;
+    public AnimationPos animationPos;
+    public AnimationElement animationElement;
     //public AGCachedStrings3Dim _cachedFaceSpriteNames;
     //public AGCachedStrings2Dim _cachedHeads;
     //public AGCachedStrings _cachedPlayerArms, _cachedLegsA, _cachedLegsACrawling, _cachedLegsAClimbing, _cachedLegsAOnPole;
@@ -616,25 +699,68 @@ namespace slugsprites
     {
       spriteData.TryUpdateNumber("order", ref order);
       if (!spriteData.TryGetValueWithType("sprite", out sprite))
-        throw new Exception($"Sprite configuration with order {order} is missing \"sprite\" field");
+        throw new Exception($"sprite configuration with order {order} is missing \"sprite\" field");
       spriteData.TryUpdateNumber("colorIndex", ref colorIndex);
       if (colorIndex < -1)
-        throw new Exception($"Sprite configuration with order {order} has incorrect value of \"colorIndex\" - must be greater than -2");
-      spriteData.TryUpdateColorFromHex("defaultColor", ref defaultColor);
-      if (spriteData.TryGetNumber("anchorX", out float _anchorX))
-        anchorX = _anchorX;
-      if (spriteData.TryGetNumber("anchorY", out float _anchorY))
-        anchorY = _anchorY;
-      if (spriteData.TryGetNumber("scaleX", out float _scaleX))
-        scaleX = _scaleX;
-      if (spriteData.TryGetNumber("scaleY", out float _scaleY))
-        scaleY = _scaleY;
-      if (spriteData.TryGetNumber("rotation", out float _rotation))
-        rotation = _rotation;
-      if (anchorX != null || anchorY != null)
-        areLocalVerticesDirty = true;
-      if (scaleX != null || scaleY != null || rotation != null)
-        isMatrixDirty = true;
+        throw new Exception($"sprite configuration with order {order} has incorrect value of \"colorIndex\" - must be greater than -2");
+      if (spriteData.TryGetValueWithType("animations", out List<object> animationList))
+        foreach (object animationName in animationList)
+          if (AnimationHandler.animations.TryGetValue((string)animationName, out Animation animation))
+          {
+            Animation newAnimation = animation.Clone();
+            animations.Add(newAnimation);
+            if (animation is AnimationColor)
+            {
+              if (animationColor != null)
+                Log.LogWarning($"Color animation for \"{sprite}[{order}]\" already was defined, overriding \"{animationColor.name}\" with \"{animation.name}\"");
+              animationColor = newAnimation as AnimationColor;
+            }
+            else if (animation is AnimationPos)
+            {
+              if (animationPos != null)
+                Log.LogWarning($"Pos animation for \"{sprite}[{order}]\" already was defined, overriding \"{animationPos.name}\" with \"{animation.name}\"");
+              animationPos = newAnimation as AnimationPos;
+            }
+            else if (animation is AnimationElement)
+            {
+              if (animationElement != null)
+                Log.LogWarning($"Element animation for \"{sprite}[{order}]\" already was defined, overriding \"{animationElement.name}\" with \"{animation.name}\"");
+              animationElement = newAnimation as AnimationElement;
+            }
+          }
+          else
+            throw new Exception($"animation \"{animationName}\", used in \"{sprite}[{order}]\" doesn't exist");
+
+      spriteData.TryUpdateNumber("anchorX", ref anchorX);
+      spriteData.TryUpdateNumber("anchorY", ref anchorY);
+      spriteData.TryUpdateNumber("scaleX", ref scaleX);
+      spriteData.TryUpdateNumber("scaleY", ref scaleY);
+      spriteData.TryUpdateNumber("rotation", ref rotation);
+      areLocalVerticesDirty = anchorX != 0f || anchorY != 0f;
+      isMatrixDirty = scaleX != 1f || scaleY != 1f || rotation != 0f;
+    }
+
+    public SlugSpriteData(SlugSpriteData other)
+    {
+      order = other.order;
+      realIndex = other.realIndex;
+      colorIndex = other.colorIndex;
+      groupIndex = other.groupIndex;
+      anchorX = other.anchorX;
+      anchorY = other.anchorY;
+      scaleX = other.scaleX;
+      scaleY = other.scaleY;
+      rotation = other.rotation;
+      areLocalVerticesDirty = other.areLocalVerticesDirty;
+      isMatrixDirty = other.isMatrixDirty;
+      sprite = other.sprite;
+      defaultSprite = other.defaultSprite;
+
+      foreach (Animation animation in other.animations)
+        animations.Add(animation.Clone());
+      animationColor = animations.LastOrDefault(a => a is AnimationColor) as AnimationColor;
+      animationPos = animations.LastOrDefault(a => a is AnimationPos) as AnimationPos;
+      animationElement = animations.LastOrDefault(a => a is AnimationElement) as AnimationElement;
     }
 
     /// <summary>

@@ -17,13 +17,14 @@ namespace slugsprites
   {
     public static BepInEx.Logging.ManualLogSource Log;
   }
+
   [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
   [BepInDependency("slime-cubed.slugbase", BepInDependency.DependencyFlags.SoftDependency)]
   public class Plugin : BaseUnityPlugin
   {
     public const string PLUGIN_GUID = "gelbi.slugsprites";
     public const string PLUGIN_NAME = "SlugSprites";
-    public const string PLUGIN_VERSION = "0.2.2";
+    public const string PLUGIN_VERSION = "0.2.3";
 
     public static bool isInit = false;
     public static bool isSlugBaseActive = false;
@@ -44,10 +45,6 @@ namespace slugsprites
 
     public void OnEnable()
     {
-      if (isInit)
-        return;
-      isInit = true;
-
       try
       {
         On.RainWorld.OnModsInit += RainWorld_OnModsInit;
@@ -62,6 +59,10 @@ namespace slugsprites
     public void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
     {
       orig(self);
+      
+      if (isInit)
+        return;
+      isInit = true;
 
       try
       {
@@ -81,6 +82,11 @@ namespace slugsprites
       try
       {
         LogWrapper.Log = Logger;
+
+        // silly cctors
+        _ = AnimationColor.ColorModifier.Type.HSV1;
+
+        AnimationHandler.Initiate();
         SpriteHandler.LoadCustomSprites();
 
         foreach (ModManager.Mod mod in ModManager.ActiveMods)
@@ -107,10 +113,7 @@ namespace slugsprites
     public void RainWorld_Update(On.RainWorld.orig_Update orig, RainWorld self)
     {
       orig(self);
-      if (!pluginInterface.debugMode.Value)
-        return;
-
-      if (!Input.GetKeyDown(pluginInterface.reloadKey.Value))
+      if (!pluginInterface.debugMode.Value || !Input.GetKeyDown(pluginInterface.reloadKey.Value))
         return;
       SpriteHandler.LoadCustomSprites();
       if (self.processManagerInitialized && self.processManager.currentMainLoop is RainWorldGame game)
