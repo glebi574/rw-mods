@@ -99,7 +99,38 @@ namespace gelbi_silly_lib
         result = value;
     }
 
-    public static bool TryGetColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, out Color result)
+    public static void UpdateNumber(this List<object> self, int index, ref int result)
+    {
+      result = Convert.ToInt32(self[index]);
+    }
+
+    public static void UpdateNumber(this List<object> self, int index, ref long result)
+    {
+      result = Convert.ToInt64(self[index]);
+    }
+
+    public static void UpdateNumber(this List<object> self, int index, ref float result)
+    {
+      result = Convert.ToSingle(self[index]);
+    }
+
+    public static void UpdateNumber(this List<object> self, int index, ref double result)
+    {
+      result = Convert.ToDouble(self[index]);
+    }
+
+    public static bool TryGetRGBColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, out Color result)
+    {
+      if (self.TryGetValueWithType(name, out string value))
+      {
+        result = value.AsRGBColor();
+        return true;
+      }
+      result = default;
+      return false;
+    }
+
+    public static bool TryGetRGBAColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, out Color result)
     {
       if (self.TryGetValueWithType(name, out string value))
       {
@@ -110,12 +141,24 @@ namespace gelbi_silly_lib
       return false;
     }
 
-    public static void TryUpdateColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, ref Color result)
+    public static void TryUpdateRGBColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, ref Color result)
     {
-      if (self.TryGetColorFromHex(name, out Color value))
+      if (self.TryGetRGBColorFromHex(name, out Color value))
         result = value;
     }
 
+    public static void TryUpdateRGBAColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, ref Color result)
+    {
+      if (self.TryGetRGBAColorFromHex(name, out Color value))
+        result = value;
+    }
+
+    /*
+      If either of these throws and you're wondering why:
+      * ensure cctor for your custom ExtEnum is being called before any of these is called - typeof doesn't trigger cctor
+      * ...
+      * that's it ig, idk what else could throw as long as you aren't silly
+    */
     public static bool TryGetExtEnum<T>(this string self, out T result, bool ignoreCase = false) where T : ExtEnum<T>
     {
       if (ExtEnumBase.TryParse(typeof(T), self, ignoreCase, out ExtEnumBase value)
@@ -136,22 +179,16 @@ namespace gelbi_silly_lib
 
     public static bool TryGetExtEnum<T, TKey>(this Dictionary<TKey, string> self, TKey name, out T result) where T : ExtEnum<T>
     {
-      if (self.TryGetValue(name, out string fieldName) && fieldName.TryGetExtEnum(out T value, true))
-      {
-        result = value;
-        return true;
-      }
+      if (self.TryGetValue(name, out string fieldName))
+        return fieldName.TryGetExtEnum(out result, true);
       result = default;
       return false;
     }
 
     public static bool TryGetExtEnum<T, TKey, TValue>(this Dictionary<TKey, TValue> self, TKey name, out T result) where T : ExtEnum<T>
     {
-      if (self.TryGetValueWithType(name, out string fieldName) && fieldName.TryGetExtEnum(out T value, true))
-      {
-        result = value;
-        return true;
-      }
+      if (self.TryGetValueWithType(name, out string fieldName))
+        return fieldName.TryGetExtEnum(out result, true);
       result = default;
       return false;
     }
@@ -165,6 +202,20 @@ namespace gelbi_silly_lib
     public static void TryUpdateExtEnum<T, TKey, TValue>(this Dictionary<TKey, TValue> self, TKey name, ref T result) where T : ExtEnum<T>
     {
       if (self.TryGetExtEnum(name, out T value))
+        result = value;
+    }
+
+    public static bool TryGetExtEnum<T>(this List<object> self, int index, out T result) where T : ExtEnum<T>
+    {
+      if (self[index] is string name)
+        return name.TryGetExtEnum(out result, true);
+      result = default;
+      return false;
+    }
+
+    public static void TryUpdateExtEnum<T>(this List<object> self, int index, ref T result) where T : ExtEnum<T>
+    {
+      if (self.TryGetExtEnum(index, out T value))
         result = value;
     }
 
