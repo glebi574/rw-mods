@@ -48,7 +48,7 @@ namespace slugsprites
             try
             {
               if (animations.ContainsKey(animationData.Key))
-                Log.LogWarning($"Overriding animation \"{animationData.Key}\" - multiple configurations for this slugcat are present");
+                throw new Exception($"animation with name \"{animationData.Key}\" already exists");
               Dictionary<string, object> animationDictionary = animationData.Value as Dictionary<string, object>;
               if (!animationDictionary.ContainsKey("type"))
                 throw new Exception($"animation misses \"type\" field");
@@ -128,7 +128,8 @@ namespace slugsprites
         : base(value, register) { }
 
         public static Type
-          HSV1 = new("HSV1", true);
+          HSV1 = new("HSV1", true),
+          HSVB = new("HSVB", true);
       }
 
       public Color color;
@@ -152,12 +153,27 @@ namespace slugsprites
         type = other.type;
       }
 
-      public void Apply(Color baseColor)
+      public void ApplyHSV(Color baseColor)
       {
-        if (type == Type.HSV1)
+        Color.RGBToHSV(baseColor, out float h, out float s, out float v);
+        if (baseColor.r == baseColor.g && baseColor.g == baseColor.b && s == 0f)
+          s = v;
+        color = Color.HSVToRGB((h + modifiers[0]) % 1f, Mathf.Clamp(s * modifiers[1], 0f, 1f), Mathf.Clamp(v * modifiers[2], 0f, 1f));
+      }
+
+      public static void ProcessModifiers(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites, SlugSpriteData spriteData, ColorModifier[] modifiers)
+      {
+        ColorModifier colorModifier1 = modifiers[0];
+        Color baseColor = sprites.colors[spriteData.colorIndex];
+        if (colorModifier1.type == Type.HSV1 || colorModifier1.type == Type.HSVB)
+          colorModifier1.ApplyHSV(baseColor);
+        for (int i = 1; i < modifiers.Length; ++i)
         {
-          Color.RGBToHSV(baseColor, out float h, out float s, out float v);
-          color = Color.HSVToRGB((h + modifiers[0]) % 1f, Mathf.Clamp(s * modifiers[1], 0f, 1f), Mathf.Clamp(v * modifiers[2], 0f, 1f));
+          ColorModifier colorModifier = modifiers[i];
+          if (colorModifier.type == Type.HSV1)
+            colorModifier.ApplyHSV(modifiers[i - 1].color);
+          else if (colorModifier.type == Type.HSV1)
+            colorModifier.ApplyHSV(baseColor);
         }
       }
     }
@@ -189,6 +205,8 @@ namespace slugsprites
       }
 
       public abstract BaseColorHandler Clone();
+
+      public abstract void Initiate(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites, SlugSpriteData spriteData, Animation owner);
 
       public abstract void Update(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites, SlugSpriteData spriteData);
     }
@@ -222,6 +240,11 @@ namespace slugsprites
         return newHandler;
       }
 
+      public override void Initiate(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites, SlugSpriteData spriteData, Animation owner)
+      {
+
+      }
+
       public override void Update(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites, SlugSpriteData spriteData)
       {
         AnimationColor animation = spriteData.animationColor;
@@ -244,8 +267,10 @@ namespace slugsprites
 
     public class Wave : BaseColorHandler
     {
-      public bool randomOffset = false;
-      public float transitionSpeed = 0.01f, currentTransition = 0f;
+      public bool randomOffset = false, equalOffset = false;
+      public int currentEqualOffsetIndex = 0;
+      public float transitionSpeed = 0.01f, transitionOffset = 0f, equalOffsetMultiplier = 1f,
+        currentTransition = 0f;
 
       public Wave() { }
 
@@ -253,7 +278,11 @@ namespace slugsprites
       : base(animation)
       {
         animation.TryUpdateNumber("transitionSpeed", ref transitionSpeed);
+        animation.TryUpdateNumber("transitionOffset", ref transitionOffset);
+        animation.TryUpdateValueWithType("equalOffset", ref equalOffset);
         animation.TryUpdateValueWithType("randomOffset", ref randomOffset);
+
+        currentTransition = transitionOffset;
       }
 
       public override BaseColorHandler Clone()
@@ -261,11 +290,36 @@ namespace slugsprites
         Wave newHandler = new()
         {
           transitionSpeed = transitionSpeed,
-          randomOffset = randomOffset
+          transitionOffset = transitionOffset,
+          currentTransition = currentTransition,
+          equalOffset = equalOffset,
+          randomOffset = randomOffset,
         };
         if (randomOffset)
           newHandler.currentTransition = UnityEngine.Random.Range(0f, 1f);
         return newHandler;
+      }
+
+      public override void Initiate(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites, SlugSpriteData spriteData, Animation owner)
+      {
+        if (!equalOffset)
+          return;
+
+        Wave originalWave = (AnimationHandler.animations[owner.name] as AnimationColor).handler as Wave;
+
+        if (currentTransition == 0f && originalWave.equalOffsetMultiplier != 1f)
+        {
+          currentTransition = ++originalWave.currentEqualOffsetIndex * originalWave.equalOffsetMultiplier;
+          return;
+        }
+
+        int animationAmount = 0;
+        foreach (List<SlugSpriteData> spriteList in sprites.additionalSprites)
+          if (spriteList != null)
+            foreach (SlugSpriteData sprite in spriteList)
+              if (sprite.animationColor?.name == owner.name)
+                ++animationAmount;
+        originalWave.equalOffsetMultiplier = 1f / animationAmount;
       }
 
       public override void Update(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites, SlugSpriteData spriteData)
@@ -327,20 +381,13 @@ namespace slugsprites
 
     public override void Initiate(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites, SlugSpriteData spriteData)
     {
-      if (colorModifiers[0].type == ColorModifier.Type.HSV1)
-        colorModifiers[0].Apply(sprites.colors[spriteData.colorIndex]);
-      for (int i = 1; i < colorModifiers.Length; ++i)
-      {
-        ColorModifier colorModifier = colorModifiers[i];
-        if (colorModifier.type == ColorModifier.Type.HSV1)
-          colorModifier.Apply(colorModifiers[i - 1].color);
-      }
+      ColorModifier.ProcessModifiers(self, sLeaser, sprites, spriteData, colorModifiers);
 
-      cachedColors = new Color[colorModifiers.Length + 1];
-      if (spriteData.colorIndex != -1)
-        cachedColors[0] = sprites.colors[spriteData.colorIndex];
+      cachedColors = new Color[colorModifiers.Length];
       for (int i = 0; i < colorModifiers.Length; ++i)
-        cachedColors[i + 1] = colorModifiers[i].color;
+        cachedColors[i] = colorModifiers[i].color;
+
+      handler.Initiate(self, sLeaser, sprites, spriteData, this);
     }
 
     public override void Update(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites, SlugSpriteData spriteData)

@@ -98,6 +98,13 @@ namespace slugsprites
         sLeaser.sprites[i].MoveInFrontOfOtherNode(sLeaser.sprites[i - 1]);
     }
 
+    public static void MoveNodesBehindBase(this List<SlugSpriteData> self, RoomCamera.SpriteLeaser sLeaser, int baseIndex)
+    {
+      FSprite baseSprite = sLeaser.sprites[baseIndex];
+      foreach (SlugSpriteData spriteData in self)
+        sLeaser.sprites[spriteData.realIndex].MoveBehindOtherNode(baseSprite);
+    }
+
     /// <summary>
     /// Updates state(position, rotation, scale, etc.) of sprites to match original ones
     /// </summary>
@@ -348,8 +355,12 @@ namespace slugsprites
         }
       }
 
-      if (sprites.additionalSprites.Length != 0)
-        sprites.colors = new Color[sprites.colorAmount];
+      sprites.colors = new Color[Math.Max(sprites.colorAmount, 2)];
+      if (sprites.colors.Length == 2)
+      {
+        sprites.colors[0] = sLeaser.sprites[_sprite.ibody].color;
+        sprites.colors[1] = sLeaser.sprites[_sprite.iface].color;
+      }
 
       // Use default colour sets, when they can't be customized
       if (sprites.colorSets != null && (self.owner.room.game.session is ArenaGameSession || self.owner.room.game.session is StoryGameSession
@@ -365,10 +376,6 @@ namespace slugsprites
         for (int i = 0; i < sprites.colorAmount; ++i)
           sprites.colors[i] = PlayerGraphics.customColors[i];
 
-      foreach (SlugSpriteData spriteData in sprites.baseSprites)
-        if (spriteData != null)
-          foreach (Animation animation in spriteData.animations)
-            animation.Initiate(self, sLeaser, sprites, spriteData);
       foreach (List<SlugSpriteData> spriteList in sprites.additionalSprites)
         if (spriteList != null)
           foreach (SlugSpriteData spriteData in spriteList)
@@ -448,6 +455,8 @@ namespace slugsprites
         spriteList?.UpdateNodes(sLeaser, spriteList[0].groupIndex);
       sprites.CustomTail?.UpdateNodes(sLeaser, _sprite.itail);
       sprites.CustomOther?.UpdateNodes(sLeaser, _sprite.ibody);
+
+      sprites.CustomTail?.MoveNodesBehindBase(sLeaser, _sprite.ibody);
 
       return sprites;
     }
@@ -538,8 +547,8 @@ namespace slugsprites
       baseUpdatable = new SlugSpriteData[_sprite.groups.Length - 2];
     public List<SlugSpriteData>[] additionalSprites = new List<SlugSpriteData>[_sprite.groups.Length],
       additionalUpdatable = new List<SlugSpriteData>[_sprite.groups.Length - 2];
-    public int firstSpriteIndex = 0, tailLength = 3, tailWideness = 1, colorAmount = 0;
-    public float tailRoundness = 1f;
+    public int firstSpriteIndex = 0, tailLength = 4, tailWideness = 1, colorAmount = 0;
+    public float tailRoundness = 0f;
 
     #region
     public SlugSpriteData BaseBody => baseSprites[_sprite.ibody];
@@ -660,9 +669,12 @@ namespace slugsprites
       tailRoundness = other.tailRoundness;
       colorAmount = other.colorAmount;
 
-      colorSets = new Color[other.colorSets.Length][];
-      for (int i = 0; i < other.colorSets.Length; ++i)
-        colorSets[i] = (Color[])other.colorSets[i].Clone();
+      if (other.colorSets != null)
+      {
+        colorSets = new Color[other.colorSets.Length][];
+        for (int i = 0; i < other.colorSets.Length; ++i)
+          colorSets[i] = (Color[])other.colorSets[i].Clone();
+      }
 
       baseSprites.CloneFrom(other.baseSprites);
       additionalSprites.CloneFrom(other.additionalSprites);
@@ -683,7 +695,7 @@ namespace slugsprites
 
   public class SlugSpriteData
   {
-    public int order = 0, realIndex = 0, colorIndex = -1, groupIndex = 0;
+    public int order = 0, realIndex = 0, colorIndex = 0, groupIndex = 0;
     public float anchorX = 0f, anchorY = 0f, scaleX = 1f, scaleY = 1f, rotation = 0f;
     public bool areLocalVerticesDirty = false, isMatrixDirty = false;
     public string sprite = "Futile_White", defaultSprite, baseSprite, previousBaseSprite = "";
@@ -701,8 +713,8 @@ namespace slugsprites
       if (!spriteData.TryGetValueWithType("sprite", out sprite))
         throw new Exception($"sprite configuration with order {order} is missing \"sprite\" field");
       spriteData.TryUpdateNumber("colorIndex", ref colorIndex);
-      if (colorIndex < -1)
-        throw new Exception($"sprite configuration with order {order} has incorrect value of \"colorIndex\" - must be greater than -2");
+      if (colorIndex < 0)
+        throw new Exception($"sprite configuration with order {order} has incorrect value of \"colorIndex\" - must be 0 or greater");
       if (spriteData.TryGetValueWithType("animations", out List<object> animationList))
         foreach (object animationName in animationList)
           if (AnimationHandler.animations.TryGetValue((string)animationName, out Animation animation))
@@ -730,6 +742,8 @@ namespace slugsprites
           }
           else
             throw new Exception($"animation \"{animationName}\", used in \"{sprite}[{order}]\" doesn't exist");
+      if (order == 0 && animations.Count != 0)
+        throw new Exception($"can't assign animations to sprite with order 0");
 
       spriteData.TryUpdateNumber("anchorX", ref anchorX);
       spriteData.TryUpdateNumber("anchorY", ref anchorY);
