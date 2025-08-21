@@ -82,7 +82,7 @@ public class CustomMesh
   public delegate void UpdateHandler(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites, SlugSpriteData updatedSprite);
 
   public readonly TriangleMesh.Triangle[] triangles = null;
-  public readonly bool mapUV = false, compatibleAsOther = true, customOrigin = false;
+  public readonly bool mapUV = false, compatibleAsOther = true, rotateOrigin = false, firstVertexAsOrigin = false, fv2AsOrigin = false;
   /// <summary>
   /// Origin offset, relative to body sprite
   /// </summary>
@@ -94,17 +94,27 @@ public class CustomMesh
   {
     meshData.TryUpdateValueWithType("mapUV", ref mapUV);
     meshData.TryUpdateValueWithType("compatibleAsOther", ref compatibleAsOther);
+    meshData.TryUpdateValueWithType("rotateOrigin", ref rotateOrigin);
+    meshData.TryUpdateValueWithType("firstVertexAsOrigin", ref firstVertexAsOrigin);
+    meshData.TryUpdateValueWithType("fv2AsOrigin", ref fv2AsOrigin);
+    if (firstVertexAsOrigin && fv2AsOrigin)
+      throw new Exception($"too many origin overrides(firstVertexAsOrigin/fv2AsOrigin) are enabled - select only one");
     meshData.TryUpdateNumber("originX", ref originX);
     meshData.TryUpdateNumber("originY", ref originY);
     if (!meshData.TryGetValueWithType("triangles", out List<object> triangleSets))
       throw new Exception($"mesh misses \"triangles\" field");
     triangles = new TriangleMesh.Triangle[triangleSets.Count];
+    if (firstVertexAsOrigin && triangles.Length < 1)
+      throw new Exception($"\"firstVertexAsOrigin\" is enabled, but mesh doesn't have any triangles");
+    if (fv2AsOrigin && triangles.Length < 2)
+      throw new Exception($"\"fv2AsOrigin\" is enabled, but mesh has less than 2 triangles");
     for (int i = 0; i < triangleSets.Count; ++i)
     {
       List<object> triangleSet = triangleSets[i] as List<object>;
+      if (triangleSet.Count != 3)
+        throw new Exception($"triangle at index {i} isn't triangle - each triangle has to have 3 indexes");
       triangles[i] = new(Convert.ToInt32(triangleSet[0]), Convert.ToInt32(triangleSet[1]), Convert.ToInt32(triangleSet[2]));
     }
-    customOrigin = originX != 0f || originY != 0f;
   }
 }
 

@@ -22,7 +22,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.slugsprites";
   public const string PLUGIN_NAME = "SlugSprites";
-  public const string PLUGIN_VERSION = "0.2.4";
+  public const string PLUGIN_VERSION = "0.2.6";
 
   public static bool isInit = false, isSlugBaseActive = false;
 
@@ -57,6 +57,10 @@ public class Plugin : BaseUnityPlugin
 
   public void OnEnable()
   {
+    if (isInit)
+      return;
+    isInit = true;
+
     try
     {
       On.RainWorld.OnModsInit += RainWorld_OnModsInit;
@@ -71,10 +75,6 @@ public class Plugin : BaseUnityPlugin
   public void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
   {
     orig(self);
-    
-    if (isInit)
-      return;
-    isInit = true;
 
     try
     {

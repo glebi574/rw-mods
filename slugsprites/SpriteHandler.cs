@@ -2,6 +2,7 @@
 using gelbi_silly_lib.Converter;
 using gelbi_silly_lib.Other;
 using SlugBase;
+using SlugBase.Assets;
 using SlugBase.DataTypes;
 using SlugBase.Features;
 using System;
@@ -174,25 +175,53 @@ public static class Extensions
   public static void SpriteHandlerWrapper(this SlugSpriteData self, PlayerGraphics playerGraphics, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites)
   {
     self.mesh.handler(playerGraphics, sLeaser, rCam, timeStacker, camPos, sprites, self);
-    if (!self.customRotation && !self.customOffsets && !self.mesh.customOrigin)
+    if (!self.customRotation && !self.customOffsets)
       return;
     Vector2[] vertexes = (sLeaser.sprites[self.realIndex] as TriangleMesh).vertices;
-    float offsetX = sLeaser.sprites[_sprite.ibody]._x + self.mesh.originX,
-      offsetY = sLeaser.sprites[_sprite.ibody]._y + self.mesh.originY,
+    Vector2 basePos;
+    if (self.mesh.firstVertexAsOrigin)
+      basePos = vertexes[0];
+    else if (self.mesh.fv2AsOrigin)
+      basePos = (vertexes[0] + vertexes[1]) / 2f;
+    else
+      basePos = sLeaser.sprites[_sprite.ibody].GetPosition();
+    float
+      offsetX = basePos.x, offsetY = basePos.y,
       scaleX = self.scaleX, scaleY = self.scaleY,
       anchorX = self.anchorX, anchorY = self.anchorY,
       rx = self.rx, ry = self.ry;
 
+    if (self.mesh.rotateOrigin)
+    {
+      float rotation = sLeaser.sprites[_sprite.ibody]._rotation * Mathf.Deg2Rad;
+      offsetX += self.mesh.originX * (float)Math.Cos(rotation);
+      offsetY += self.mesh.originY * (float)Math.Sin(rotation);
+    }
+    else
+    {
+      offsetX += self.mesh.originX;
+      offsetY += self.mesh.originY;
+    }
+
     if (self.customRotation && self.customOffsets)
     {
       float dx = anchorX + offsetX, dy = anchorY + offsetY;
-      for (int i = 0; i < vertexes.Length; ++i)
-      {
-        ref Vector2 vertex = ref vertexes[i];
-        float x = vertex.x - offsetX, y = vertex.y - offsetY;
-        vertex.x = (x * rx - y * ry) * scaleX + dx;
-        vertex.y = (x * ry + y * rx) * scaleY + dy;
-      }
+      if (self.customScale)
+        for (int i = 0; i < vertexes.Length; ++i)
+        {
+          ref Vector2 vertex = ref vertexes[i];
+          float x = vertex.x - offsetX, y = vertex.y - offsetY;
+          vertex.x = (x * rx - y * ry) * scaleX + dx;
+          vertex.y = (x * ry + y * rx) * scaleY + dy;
+        }
+      else
+        for (int i = 0; i < vertexes.Length; ++i)
+        {
+          ref Vector2 vertex = ref vertexes[i];
+          float x = vertex.x - offsetX, y = vertex.y - offsetY;
+          vertex.x = x * rx - y * ry + dx;
+          vertex.y = x * ry + y * rx + dy;
+        }
     }
     else if (self.customRotation)
       for (int i = 0; i < vertexes.Length; ++i)
@@ -204,13 +233,23 @@ public static class Extensions
       }
     else
     {
-      float dx = anchorX + offsetX, dy = anchorY + offsetY;
-      for (int i = 0; i < vertexes.Length; ++i)
+      if (self.customScale)
       {
-        ref Vector2 vertex = ref vertexes[i];
-        vertex.x = (vertex.x - offsetX) * scaleX + dx;
-        vertex.y = (vertex.y - offsetY) * scaleY + dy;
+        float dx = anchorX + offsetX, dy = anchorY + offsetY;
+        for (int i = 0; i < vertexes.Length; ++i)
+        {
+          ref Vector2 vertex = ref vertexes[i];
+          vertex.x = (vertex.x - offsetX) * scaleX + dx;
+          vertex.y = (vertex.y - offsetY) * scaleY + dy;
+        }
       }
+      else
+        for (int i = 0; i < vertexes.Length; ++i)
+        {
+          ref Vector2 vertex = ref vertexes[i];
+          vertex.x += anchorX;
+          vertex.y += anchorY;
+        }
     }
   }
 
@@ -958,7 +997,7 @@ public class SlugSpriteData
   /// </summary>
   public int groupIndex = 0;
   public float anchorX = 0f, anchorY = 0f, scaleX = 1f, scaleY = 1f, rotation = 0f, rx = 0f, ry = 0f;
-  public bool areLocalVerticesDirty = false, isMatrixDirty = false, customOffsets = false, customRotation = false;
+  public bool areLocalVerticesDirty = false, isMatrixDirty = false, customOffsets = false, customScale = false, customRotation = false;
   /// <summary>
   /// Sprite name
   /// </summary>
@@ -1041,6 +1080,7 @@ public class SlugSpriteData
     areLocalVerticesDirty = anchorX != 0f || anchorY != 0f;
     isMatrixDirty = scaleX != 1f || scaleY != 1f || rotation != 0f;
     customOffsets = anchorX != 0f || anchorY != 0f || scaleX != 1f || scaleY != 1f;
+    customScale = scaleX != 1f || scaleY != 1f;
     if (customRotation = rotation != 0f)
     {
       rx = (float)Math.Cos(rotation);
@@ -1064,6 +1104,7 @@ public class SlugSpriteData
     areLocalVerticesDirty = other.areLocalVerticesDirty;
     isMatrixDirty = other.isMatrixDirty;
     customOffsets = other.customOffsets;
+    customScale = other.customScale;
     customRotation = other.customRotation;
     sprite = other.sprite;
     defaultSprite = other.defaultSprite;
