@@ -196,10 +196,15 @@ namespace gelbi_silly_lib.BepInExUtils
     /// </summary>
     public static bool HasPluginClasses(this Assembly self) // BepInEx has similar method, but I'm not sure how it works
     {
-      foreach (Type type in self.GetTypes())
-        if (type.IsSubclassOf(typeof(BaseUnityPlugin)))
-          return true;
-      return false;
+      return self.GetTypes().Any(t => t.IsSubclassOf(typeof(BaseUnityPlugin)));
+    }
+
+    /// <summary>
+    /// Checks safely whether assembly defines BaseUnityPlugin classes
+    /// </summary>
+    public static bool HasPluginClassesSafe(this Assembly self)
+    {
+      return self.GetTypesSafe().Any(t => t.IsSubclassOf(typeof(BaseUnityPlugin)));
     }
 
     /// <summary>
