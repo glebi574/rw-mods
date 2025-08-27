@@ -1,4 +1,5 @@
-﻿using Mono.Cecil.Cil;
+﻿using gelbi_silly_lib.ModManagerUtils;
+using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using System.Collections.Generic;
 using System.Globalization;
@@ -80,16 +81,16 @@ namespace gelbi_silly_lib
 {
   public static partial class GSLUtils
   {
-    public static void LogAllAtlases()
+    public static void LogAllSprites()
     {
       foreach (KeyValuePair<string, FAtlasElement> spriteKVP in Futile.atlasManager._allElementsByName)
-        Debug.Log($"sprite: {spriteKVP.Key}");
+        Log.LogInfo(spriteKVP.Key);
     }
 
     public static void LogActiveMods()
     {
       foreach (ModManager.Mod mod in ModManager.ActiveMods)
-        Log.LogInfo(mod.name);
+        Log.LogInfo(mod.GetSimpleName());
     }
   }
 

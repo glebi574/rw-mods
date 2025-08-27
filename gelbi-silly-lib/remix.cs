@@ -26,7 +26,8 @@ public class PluginInterface : OptionInterface
       new OpLabel(10f, 550f, "Options and tools", bigText: true),
 
       new OpSimpleButton(new(10f, 510f), new(80f, 20f), "Log hooks"),
-      new OpSimpleButton(new(10f, 480f), new(80f, 20f), "Log mod list")
+      new OpSimpleButton(new(100f, 510f), new(80f, 20f), "Log mod list"),
+      new OpSimpleButton(new(10f, 480f), new(170f, 20f), "Log loaded sprites")
     };
 
     optionsTab.AddItems(options);
@@ -50,15 +51,24 @@ public class PluginInterface : OptionInterface
       Log.LogInfo($" * Logging active code mods:");
       foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
         if (assembly.HasPluginClassesSafe())
-          Log.LogInfo($"mod: {assembly.GetFullPluginName()}");
+          Log.LogInfo($"{assembly.GetFullPluginName()}");
       Log.LogInfo($" * Finished logging");
 
       Log.LogInfo($" * Logging all active mods:");
-      foreach (ModManager.Mod mod in ModManager.ActiveMods)
-        Log.LogInfo($"mod: {mod.GetSimpleName()}");
+      GSLUtils.LogActiveMods();
       Log.LogInfo($" * Finished logging");
 
       element.greyedOut = true;
+    };
+
+    (options[3] as OpSimpleButton).OnClick += (element) =>
+    {
+      if (loggedHooks)
+        return;
+
+      Log.LogInfo($" * Logging all loaded sprites:");
+      GSLUtils.LogAllSprites();
+      Log.LogInfo($" * Finished logging");
     };
   }
 }
