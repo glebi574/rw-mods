@@ -1,5 +1,7 @@
-﻿using Mono.Cecil;
+﻿using BepInEx.Preloader.Patching;
+using Mono.Cecil;
 using Mono.Cecil.Cil;
+using MonoMod.RuntimeDetour;
 using MonoMod.Utils;
 using System;
 using System.Collections.Concurrent;
@@ -182,28 +184,60 @@ public static class Patcher
 
   public static string CurrentTime { get => $"[{DateTime.Now:HH:mm:ss}]"; }
 
+  public static int allPatchedMethodCounter = 0;
+  public static long initializeTime = 0;
+
+  public static void Initialize()
+  {
+    initializeTime = Stopwatch.GetTimestamp();
+    Console.WriteLine("profiler-preloader ♥");
+
+    if (!Directory.Exists(customLogsPath))
+      Directory.CreateDirectory(customLogsPath);
+    Profiler.Logger.Init(profilerLogPath);
+    Profiler.Processor.Init(profilerDataPath);
+    Profiler.Log($"{CurrentTime} Initializing profiler");
+  }
+
   public static IEnumerable<string> TargetDLLs
   {
     get
     {
-      Console.WriteLine("profiler-preloader ♥");
-
-      if (!Directory.Exists(customLogsPath))
-        Directory.CreateDirectory(customLogsPath);
-      Profiler.Logger.Init(profilerLogPath);
-      Profiler.Processor.Init(profilerDataPath);
-      Profiler.Log($"{CurrentTime} Initializing profiler");
-
-      yield return "Assembly-CSharp.dll";
+      foreach (string assemblyPath in Directory.GetFiles("RainWorld_Data\\Managed").Where(p => Path.GetExtension(p) == ".dll"))
+      {
+        string assemblyName = Path.GetFileName(assemblyPath);
+        if (!assembliesToSkip.Contains(assemblyName))
+          yield return assemblyName;
+      }
     }
   }
 
-  public static int patchedMethodCounter = 0;
+  public static void Finish()
+  {
+    Profiler.Log($"{CurrentTime} ** Finished patching initial {allPatchedMethodCounter} methods in {(double)(Stopwatch.GetTimestamp() - initializeTime) / Stopwatch.Frequency} seconds");
+    if (errorCounter != 0)
+      Profiler.Log($"Failed to patch {errorCounter} methods");
+
+    new Hook(typeof(System.Reflection.Assembly).GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public)
+      .First(m => m.Name == "LoadFile" && m.GetParameters().Count() == 1), Assembly_LoadFile);
+  }
+
+  public static System.Reflection.Assembly Assembly_LoadFile(Func<string, System.Reflection.Assembly> orig, string path)
+  {
+    AssemblyDefinition asm = AssemblyDefinition.ReadAssembly(path);
+    Patch(asm);
+    AssemblyPatcher.Load(asm, Path.GetFileName(path));
+    string asmName = Path.GetFileNameWithoutExtension(path);
+    return AppDomain.CurrentDomain.GetAssemblies().First(a => a.GetName().Name == asmName);
+  }
+
+  public static int patchedMethodCounter = 0, errorCounter = 0;
   public static TypeReference asyncType, iteratorType;
 
   public static void Patch(AssemblyDefinition asm)
   {
-    Profiler.Log($"{CurrentTime} Patching methods");
+    patchedMethodCounter = 0;
+    Profiler.Log($"{CurrentTime} Patching methods of {asm.Name.Name}");
     long startTime = Stopwatch.GetTimestamp();
     foreach (ModuleDefinition module in asm.Modules)
     {
@@ -215,13 +249,16 @@ public static class Patcher
         PatchType(type);
     }
     Profiler.Log($"{CurrentTime} Finished patching {patchedMethodCounter} methods in {(double)(Stopwatch.GetTimestamp() - startTime) / Stopwatch.Frequency} seconds");
-    // asm.Write("wawa.dll");
   }
 
-  public static readonly string[] namespacesToSkip = new string[] { "System", "On", "IL", "Mono", "Microsoft",
-      "MS", "BepInEx", "Harmony", "Unity", "Steamworks", "Epic", "Sony", "Rewired", "Stove", "Galaxy",
-      "PlayEveryWare", "TMPro", "Kittehface", "JetBrains", "AOT", "Dragons", "ObjCRuntimeInternal",
-      "XamMac", "Internal", "AssetBundles", "profiler" };
+  public static readonly string[] namespacesToSkip = new string[] {
+      "System", "On", "IL", "Microsoft", "Rewired",
+      "MS", "Sony", "Stove", "ObjCRuntimeInternal",
+      "XamMac", "Internal", "AssetBundles", "profiler" },
+    assembliesToSkip = new string[] {
+      "System.Core.dll", "MonoMod.Utils.dll", "Mono.Cecil.dll", "Mono.Cecil.Mdb.dll", "Mono.Cecil.Pdb.dll", "Mono.Cecil.Rocks.dll",
+      "MonoMod.RuntimeDetour.dll", "Mono.Security.dll", "System.Configuration.dll", "System.Xml.dll", "Rewired_Windows.dll",
+      "Rewired_Core.dll" };
 
   public static bool IsSkippedNamespace(string name)
   {
@@ -232,6 +269,12 @@ public static class Patcher
         return true;
     return false;
   }
+
+  public static readonly (string declaringType, string name)[] skippedMethods = new (string declaringType, string name)[]
+  {
+    ("ObjectsPage", "Refresh"),
+    ("SlugNPCAI", "Move"),
+  };
 
   public static void PatchType(TypeDefinition type, string indent = "")
   {
@@ -245,7 +288,8 @@ public static class Patcher
     foreach (MethodDefinition method in type.Methods)
     {
       if (!method.HasBody || method.Name.StartsWith("<") || method.IsConstructor && method.IsStatic
-        || method.CustomAttributes.Any(a => a.AttributeType == asyncType || a.AttributeType == iteratorType))
+        || method.CustomAttributes.Any(a => a.AttributeType == asyncType || a.AttributeType == iteratorType)
+        || skippedMethods.Any(m => method.DeclaringType.Name == m.declaringType && method.Name == m.name))
         continue;
 
       Profiler.Log($"{indent}| {method}");
@@ -256,8 +300,10 @@ public static class Patcher
       catch (Exception e)
       {
         Profiler.Log($"Failed to patch {method}: {e}");
+        ++errorCounter;
       }
 
+      ++allPatchedMethodCounter;
       ++patchedMethodCounter;
     }
   }
