@@ -29,7 +29,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.faster-world";
   public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.0";
+  public const string PLUGIN_VERSION = "1.0.1";
 
   public static bool isInit = false;
 
@@ -85,7 +85,7 @@ public class Plugin : BaseUnityPlugin
     });
     if (rainWorld.processManager?.mySteamManager != null)
     {
-      int offset = storedMods.Count;
+      int offset = modFolders.Length;
       PublishedFileId_t[] subscribedItems = rainWorld.processManager.mySteamManager.GetSubscribedItems();
       Parallel.For(0, subscribedItems.Length, i =>
       {
