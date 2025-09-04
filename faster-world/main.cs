@@ -29,7 +29,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.faster-world";
   public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.1";
+  public const string PLUGIN_VERSION = "1.0.2";
 
   public static bool isInit = false;
 
@@ -77,6 +77,7 @@ public class Plugin : BaseUnityPlugin
     // I dare you to check original implementation
     ConcurrentDictionary<int, ModManager.Mod> storedMods = new();
     string[] modFolders = Directory.GetDirectories($"{Custom.RootFolderDirectory()}{Path.DirectorySeparatorChar}mods");
+    int modAmount = modFolders.Length;
     Parallel.For(0, modFolders.Length, i =>
     {
       ModManager.Mod mod = LoadModFromJson(rainWorld, modFolders[i]);
@@ -85,7 +86,6 @@ public class Plugin : BaseUnityPlugin
     });
     if (rainWorld.processManager?.mySteamManager != null)
     {
-      int offset = modFolders.Length;
       PublishedFileId_t[] subscribedItems = rainWorld.processManager.mySteamManager.GetSubscribedItems();
       Parallel.For(0, subscribedItems.Length, i =>
       {
@@ -96,12 +96,13 @@ public class Plugin : BaseUnityPlugin
           return;
         mod.workshopId = subscribedItems[i].m_PublishedFileId;
         mod.workshopMod = true;
-        storedMods[offset + i] = mod;
+        storedMods[modAmount + i] = mod;
       });
+      modAmount += subscribedItems.Length;
     }
 
     HashSet<string> modIDs = new();
-    for (int i = 0; i < storedMods.Count; ++i)
+    for (int i = 0; i < modAmount; ++i)
       if (storedMods.TryGetValue(i, out ModManager.Mod mod) && modIDs.Add(mod.id))
         ModManager.InstalledMods.Add(mod);
   }
