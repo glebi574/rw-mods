@@ -1,8 +1,8 @@
 ﻿using gelbi_silly_lib;
 using gelbi_silly_lib.Converter;
-using gelbi_silly_lib.Other;
+using gelbi_silly_lib.ConverterExt;
+using gelbi_silly_lib.OtherExt;
 using SlugBase;
-using SlugBase.Assets;
 using SlugBase.DataTypes;
 using SlugBase.Features;
 using System;
@@ -11,6 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using UnityEngine;
+using static slugsprites.AnimationColor;
 using static slugsprites.LogWrapper;
 
 namespace slugsprites;
@@ -62,16 +63,12 @@ public static class Extensions
   /// </summary>
   public static void CreateSprites(this List<SlugSpriteData> self, RoomCamera.SpriteLeaser sLeaser, int baseIndex)
   {
-    string baseSpriteName = sLeaser.sprites[baseIndex]._element.name,
-      suffix = _sprite.suffixes[self[0].groupIndex];
-    if (suffix != "")
-      baseSpriteName = baseSpriteName.Substring(0, baseSpriteName.Length - suffix.Length);
     foreach (SlugSpriteData spriteData in self)
     {
-      spriteData.baseSprite = baseSpriteName;
       FSprite newSprite = sLeaser.sprites[spriteData.realIndex] = spriteData.mesh == null ? new FSprite(spriteData.defaultSprite)
         : new TriangleMesh(spriteData.defaultSprite, (TriangleMesh.Triangle[])spriteData.mesh.triangles.Clone(), false),
         baseSprite = sLeaser.sprites[baseIndex];
+      spriteData.previousBaseElement = baseSprite._element;
       if (spriteData.mesh?.mapUV ?? false)
         SpriteHandler.MapUV(newSprite as TriangleMesh);
       newSprite._anchorX = baseSprite._anchorX;
@@ -104,35 +101,6 @@ public static class Extensions
   }
 
   /// <summary>
-  /// Updates sprites, based on original ones, to match sprite element
-  /// </summary>
-  public static void UpdateElements(this List<SlugSpriteData> self, RoomCamera.SpriteLeaser sLeaser)
-  {
-    SlugSpriteData firstSprite = self[0];
-    string newName = sLeaser.sprites[firstSprite.groupIndex].element.name;
-    if (!firstSprite.previousBaseSprite.CheckSpriteChange(newName))
-      return;
-    firstSprite.previousBaseSprite = newName;
-    string suffix = newName.Substring(newName[newName.Length - 1] == 'd' ? 4 : firstSprite.baseSprite.Length);
-    foreach (SlugSpriteData spriteData in self)
-      sLeaser.sprites[spriteData.realIndex].SetSpriteFromName(spriteData.sprite + suffix);
-  }
-
-  /// <summary>
-  /// Checks whether string is different from other one by last 3 letters
-  /// </summary>
-  public static bool CheckSpriteChange(this string self, string other)
-  {
-    if (self.Length != other.Length)
-      return true;
-    int a = self.Length - 1;
-    // If this throws, you know why
-    return self[a] != other[a--]
-        || self[a] != other[a--]
-        || self[a] != other[a];
-  }
-
-  /// <summary>
   /// Returns additional sprite with same base name
   /// </summary>
   public static SlugSpriteData GetSprite(this List<SlugSpriteData> self, string sprite)
@@ -147,19 +115,6 @@ public static class Extensions
   {
     return self.FirstOrDefault(s => s.sprite == sprite || s.sprite == s.defaultSprite);
   }
-  
-  /// <summary>
-   /// Moves all custom sprites at given index behind their base sprite
-   /// </summary>
-  public static void ApplyPartOrder(this List<SlugSpriteData> self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites)
-  {
-    int baseIndex = sprites.basePartOrder.IndexOf(self[0].groupIndex) + 1;
-    if (baseIndex == 0 || baseIndex == sprites.basePartOrder.Count)
-      return;
-    FSprite baseSprite = sLeaser.sprites[sprites.basePartOrder[baseIndex]];
-    foreach (SlugSpriteData spriteData in self)
-      sLeaser.sprites[spriteData.realIndex].MoveBehindOtherNode(baseSprite);
-  }
 
   /// <summary>
   /// Replaces sprite's element with one, that has given name
@@ -172,7 +127,8 @@ public static class Extensions
   /// <summary>
   /// Wrapper layer for handler calls to allow applying offsets/scales/rotation to mesh
   /// </summary>
-  public static void SpriteHandlerWrapper(this SlugSpriteData self, PlayerGraphics playerGraphics, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites)
+  public static void ApplyMeshes(this SlugSpriteData self, PlayerGraphics playerGraphics, RoomCamera.SpriteLeaser sLeaser,
+    RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites)
   {
     self.mesh.handler(playerGraphics, sLeaser, rCam, timeStacker, camPos, sprites, self);
     if (!self.customRotation && !self.customOffsets)
@@ -256,33 +212,102 @@ public static class Extensions
   /// <summary>
   /// Processes sprite handlers if any are defiend
   /// </summary>
-  public static void ManageSpriteHandlersS(this List<SlugSpriteData> self, PlayerGraphics playerGraphics, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites)
+  public static void ManageDefinedSpriteHandlers(this List<SlugSpriteData> self, PlayerGraphics playerGraphics, RoomCamera.SpriteLeaser sLeaser,
+    RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites)
   {
     if (self == null)
       return;
     foreach (SlugSpriteData spriteData in self)
       if (spriteData.mesh != null)
-        spriteData.SpriteHandlerWrapper(playerGraphics, sLeaser, rCam, timeStacker, camPos, sprites);
+        spriteData.ApplyMeshes(playerGraphics, sLeaser, rCam, timeStacker, camPos, sprites);
   }
 
   /// <summary>
-  /// Processes sprite handlers if any are defiend and returns left non-processed sprites to be processed
+  /// Processes sprite handlers if any are defiend and returns unprocessed sprites to be processed
   /// </summary>
-  public static List<SlugSpriteData> ManageSpriteHandlers(this List<SlugSpriteData> self, PlayerGraphics playerGraphics, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites)
+  public static List<SlugSpriteData> ManageSpriteHandlers(this List<SlugSpriteData> self, PlayerGraphics playerGraphics, RoomCamera.SpriteLeaser sLeaser,
+    RoomCamera rCam, float timeStacker, Vector2 camPos, SlugcatSprites sprites)
   {
     List<SlugSpriteData> unhandled = new();
     if (self == null)
       return unhandled;
     foreach (SlugSpriteData spriteData in self)
       if (spriteData.mesh != null)
-        spriteData.SpriteHandlerWrapper(playerGraphics, sLeaser, rCam, timeStacker, camPos, sprites);
+        spriteData.ApplyMeshes(playerGraphics, sLeaser, rCam, timeStacker, camPos, sprites);
       else
         unhandled.Add(spriteData);
     return unhandled;
   }
+
+  /// <summary>
+  /// Syncs elements according to cache, selecting left/right version based on scaleX of original sprite
+  /// </summary>
+  public static void UpdateElements(this SlugcatSprites self, RoomCamera.SpriteLeaser sLeaser, int groupIndex)
+  {
+    SlugSpriteData baseSprite = self.baseSprites[groupIndex];
+    List<SlugSpriteData> additionalSprites = self.additionalSprites[groupIndex];
+    FAtlasElement element = sLeaser.sprites[groupIndex]._element;
+    bool hasBaseSprite = baseSprite != null, hasAdditionalSprites = additionalSprites != null,
+      // only 1st arm uses scaleY = -1
+      asymmetricRight = groupIndex != _sprite.iarm1 && sLeaser.sprites[groupIndex]._scaleX >= 0f;
+    int asymmetricIndex = asymmetricRight ? 2 : 1;
+    if (hasBaseSprite && baseSprite.previousBaseElement != element || hasAdditionalSprites && additionalSprites[0].previousBaseElement != element)
+    {
+      string key = null;
+      if (hasAdditionalSprites)
+      {
+        key = element.name.Substring(additionalSprites[0].cachedElements.keyOffset);
+        foreach (SlugSpriteData spriteData in additionalSprites)
+        {
+          int index = 0;
+          if (spriteData.isAsymmetric)
+          {
+            index = asymmetricIndex;
+            spriteData.asymmetricRight = asymmetricRight;
+            spriteData.lastCacheKey = key;
+          }
+          sLeaser.sprites[spriteData.realIndex].element = spriteData.cachedElements.elements[index][key];
+        }
+        if (!hasBaseSprite)
+          foreach (SlugSpriteData spriteData in additionalSprites)
+            spriteData.previousBaseElement = element;
+      }
+      if (hasBaseSprite)
+      {
+        key ??= element.name.Substring(baseSprite.cachedElements.keyOffset);
+        int index = 0;
+        if (baseSprite.isAsymmetric)
+        {
+          index = asymmetricIndex;
+          baseSprite.asymmetricRight = asymmetricRight;
+          baseSprite.lastCacheKey = key;
+        }
+        baseSprite.previousBaseElement = sLeaser.sprites[groupIndex].element = baseSprite.cachedElements.elements[index][key];
+        if (hasAdditionalSprites)
+          foreach (SlugSpriteData spriteData in additionalSprites)
+            spriteData.previousBaseElement = baseSprite.previousBaseElement;
+      }
+      return;
+    }
+    if (hasAdditionalSprites)
+      foreach (SlugSpriteData spriteData in additionalSprites)
+        if (spriteData.isAsymmetric && spriteData.asymmetricRight != asymmetricRight)
+        {
+          sLeaser.sprites[spriteData.realIndex].element = spriteData.cachedElements.elements[asymmetricIndex][spriteData.lastCacheKey];
+          spriteData.asymmetricRight = asymmetricRight;
+        }
+    if (hasBaseSprite && baseSprite.isAsymmetric && baseSprite.asymmetricRight != asymmetricRight)
+    {
+      baseSprite.previousBaseElement = sLeaser.sprites[groupIndex].element = baseSprite.cachedElements.elements[asymmetricIndex][baseSprite.lastCacheKey];
+      baseSprite.asymmetricRight = asymmetricRight;
+      if (hasAdditionalSprites)
+        foreach (SlugSpriteData spriteData in additionalSprites)
+          spriteData.previousBaseElement = baseSprite.previousBaseElement;
+    }
+  }
 }
 
-public class _sprite
+public static class _sprite
 {
   /// <summary>
   /// Universal handled name or suffix
@@ -313,6 +338,14 @@ public class _sprite
   /// </summary>
   public static readonly int[] suffixLength = { 1, 1, 0, 2, 2, 1, 1, 0, 0, 2, 0, 0 };
   /// <summary>
+  /// Whether group can be asymmetric
+  /// </summary>
+  public static readonly bool[] asymmetricGroups = new bool[] { false, false, false, true, false, true, true, true, true, true, false, false };
+  /// <summary>
+  /// Sprites, elements of which are managed dynamically
+  /// </summary>
+  public static readonly bool[] managedSprites = new bool[] { false, false, false, true, true, true, true, true, true, true, false, false };
+  /// <summary>
   /// Indexes for each body part name
   /// <para><c>other</c> - not real index. It's only used as one internally by slugsprites as optimization</para>
   /// </summary>
@@ -332,6 +365,153 @@ public class _sprite
   };
 }
 
+public class SpecificCachedElements
+{
+  public Dictionary<string, FAtlasElement>[] elements;
+  public int keyOffset = 0;
+  public string defaultCacheKey;
+  public bool hasAsymmetricSprites = false;
+
+  public SpecificCachedElements(Dictionary<string, FAtlasElement>[] elements, int keyOffset, string defaultCacheKey, bool cacheAsymmetric = true)
+  {
+    this.elements = elements;
+    this.defaultCacheKey = defaultCacheKey;
+    this.keyOffset = keyOffset;
+    if (cacheAsymmetric)
+      CacheAsymmetric();
+  }
+
+  /// <summary>
+  /// Clones base cache as asymmetric if asymmetric sprites exist
+  /// </summary>
+  public void CacheAsymmetric()
+  {
+    if (!elements[0].IsAsymmetric())
+      return;
+    hasAsymmetricSprites = true;
+    Dictionary<string, FAtlasElement> left = elements[1] = new(), right = elements[2] = new();
+    foreach (KeyValuePair<string, FAtlasElement> kvp in elements[0])
+    {
+      left[kvp.Key] = Futile.atlasManager.GetElementWithName("Left" + kvp.Value.name);
+      right[kvp.Key] = Futile.atlasManager.GetElementWithName("Right" + kvp.Value.name);
+    }
+  }
+}
+
+public static class CachedElements
+{
+  public static readonly Dictionary<string, SpecificCachedElements> head = new(), legs = new(), arms = new(), hands = new(), face = new();
+  /// <summary>
+  /// Index for default sprite names at which key for sprite starts
+  /// </summary>
+  public const int offsetHead = 5, offsetLegs = 5, offsetArms = 9, offsetHands = 18, offsetFace = 4;
+  // HeadA | LegsA | PlayerArm | OnTopOfTerrainHand | Face
+
+  public static void Clear()
+  {
+    head.Clear();
+    legs.Clear();
+    arms.Clear();
+    hands.Clear();
+    face.Clear();
+  }
+
+  /// <summary>
+  /// Caches element name+suffix at specified suffix
+  /// </summary>
+  public static void Cache(this Dictionary<string, FAtlasElement> self, string name, string suffix)
+  {
+    self[suffix] = Futile.atlasManager.GetElementWithName(name + suffix);
+  }
+
+  /// <summary>
+  /// Caches elements name{0..N} at suffix{0..N}
+  /// </summary>
+  public static void CacheFor(this Dictionary<string, FAtlasElement> self, string name, string suffix, int lastN)
+  {
+    for (int i = 0; i <= lastN; ++i)
+    {
+      string suffixN = suffix + i;
+      self[suffixN] = Futile.atlasManager.GetElementWithName(name + suffixN);
+    }
+  }
+
+  /// <summary>
+  /// Returns <c>true</c> if sprite has asymmetric version
+  /// </summary>
+  public static bool IsAsymmetric(this Dictionary<string, FAtlasElement> self)
+  {
+    Dictionary<string, FAtlasElement>.Enumerator enumerator = self.GetEnumerator();
+    enumerator.MoveNext();
+    return Futile.atlasManager._allElementsByName.ContainsKey("Left" + enumerator.Current.Value.name);
+  }
+
+  public static SpecificCachedElements GetOrCreateWith(SlugSpriteData sprite)
+  {
+    string baseName = sprite.sprite;
+    Dictionary<string, FAtlasElement>[] elements;
+    SpecificCachedElements result;
+    switch (sprite.groupIndex)
+    {
+      case _sprite.ihead:
+        if (head.TryGetValue(baseName, out result))
+          return result;
+        elements = new Dictionary<string, FAtlasElement>[3];
+        elements[0] = new();
+        elements[0].CacheFor(baseName + "A", "", 17);
+        head[baseName] = result = new(elements, offsetHead, "0");
+        return result;
+      case _sprite.ilegs:
+        if (legs.TryGetValue(baseName, out result))
+          return result;
+        elements = new Dictionary<string, FAtlasElement>[1];
+        Dictionary<string, FAtlasElement> legCache = elements[0] = new();
+        string legsA = baseName + 'A';
+        legCache.CacheFor(legsA, "", 6);
+        legCache.CacheFor(legsA, "Climbing", 6);
+        legCache.CacheFor(legsA, "Crawling", 5);
+        legCache.CacheFor(legsA, "OnPole", 6);
+        legCache.Cache(legsA, "Air0");
+        legCache.Cache(legsA, "Pole");
+        legCache.Cache(legsA, "VerticalPole");
+        legCache.Cache(legsA, "Wall");
+        legs[baseName] = result = new(elements, offsetLegs, "", false);
+        return result;
+      case _sprite.iarm1:
+      case _sprite.iarm2:
+        if (arms.TryGetValue(baseName, out result))
+          return result;
+        elements = new Dictionary<string, FAtlasElement>[3];
+        elements[0] = new();
+        elements[0].CacheFor(baseName, "", 12);
+        arms[baseName] = result = new(elements, offsetArms, "0");
+        return result;
+      case _sprite.iterrainHand1:
+      case _sprite.iterrainHand2:
+        if (hands.TryGetValue(baseName, out result))
+          return result;
+        elements = new Dictionary<string, FAtlasElement>[3];
+        elements[0] = new();
+        elements[0].Cache(baseName, "");
+        elements[0].Cache(baseName, "2");
+        hands[baseName] = result = new(elements, offsetHands, "");
+        return result;
+      case _sprite.iface:
+        if (face.TryGetValue(baseName, out result))
+          return result;
+        elements = new Dictionary<string, FAtlasElement>[3];
+        Dictionary<string, FAtlasElement> faceCache = elements[0] = new();
+        faceCache.CacheFor(baseName, "A", 8);
+        faceCache.CacheFor(baseName, "B", 8);
+        faceCache.Cache(baseName, "Dead");
+        faceCache.Cache(baseName, "Stunned");
+        face[baseName] = result = new(elements, offsetFace, "A0");
+        return result;
+    }
+    throw new Exception();
+  }
+}
+
 public class ManagedPlayerData
 {
   public RoomCamera rCam;
@@ -344,6 +524,10 @@ public class SpriteHandler
   /// Stores player data for sprite hot reloading
   /// </summary>
   public static ConditionalWeakTable<Player, ManagedPlayerData> managedPlayers = new();
+  /// <summary>
+  /// List of managed players
+  /// </summary>
+  public static List<WeakReference<Player>> managedPlayerList = new();
   /// <summary>
   /// Stores custom sprite data per slugcat name
   /// </summary>
@@ -387,50 +571,40 @@ public class SpriteHandler
       * (1f + (Mathf.Sin((float)(segment * Math.PI / length)) * roundness));
   }
 
-  public static SlugcatSprites InitCachedSpriteNames(PlayerGraphics self)
+  /// <summary>
+  /// Initializes colors and animations(automatically called when body color changes)
+  /// </summary>
+  public static void InitializeColors(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites)
   {
-    if (!self.TryGetSupportedSlugcat(out SlugcatSprites sprites))
-      return null;
-
-    if (sprites.BaseFace != null)
-      self._cachedFaceSpriteNames = new AGCachedStrings3Dim(new string[] { sprites.BaseFace.sprite, "PFace" }, new string[] { "A", "B", "C", "D", "E" }, 9);
-    if (sprites.BaseHead != null)
-      self._cachedHeads = new AGCachedStrings2Dim(new string[] { $"{sprites.BaseHead.sprite}A", $"{sprites.BaseHead.sprite}B", $"{sprites.BaseHead.sprite}C" }, 18);
-    if (sprites.BaseArm1 != null)
-      self._cachedPlayerArms = new AGCachedStrings(sprites.BaseArm1.sprite, 13);
-    if (sprites.BaseLegs != null)
+    sprites.colors = new Color[Math.Max(sprites.colorAmount, 2)];
+    if (sprites.colors.Length == 2)
     {
-      string legsSpriteA = $"{sprites.BaseLegs.sprite}A";
-      self._cachedLegsA = new AGCachedStrings(legsSpriteA, 31);
-      self._cachedLegsACrawling = new AGCachedStrings($"{legsSpriteA}Crawling", 31);
-      self._cachedLegsAClimbing = new AGCachedStrings($"{legsSpriteA}Climbing", 31);
-      self._cachedLegsAOnPole = new AGCachedStrings($"{legsSpriteA}OnPole", 31);
+      sprites.colors[0] = sLeaser.sprites[_sprite.ibody].color;
+      sprites.colors[1] = sLeaser.sprites[_sprite.iface].color;
     }
 
-    return sprites;
+    if (!self.RenderAsPup)
+    {
+      // Use default colour sets, when they can't be customized
+      if (sprites.colorSets != null && (self.owner.room.game.session is ArenaGameSession || self.owner.room.game.session is StoryGameSession
+        && self.useJollyColor && RWCustom.Custom.rainWorld.options.jollyColorMode == Options.JollyColorMode.AUTO))
+        for (int i = 0; i < sprites.colorAmount; ++i)
+          sprites.colors[i] = sprites.colorSets[(self.owner as Player).playerState.playerNumber % 4][i];
+      // Use SlugBase colours if it's present
+      else if (Plugin.isSlugBaseActive && SlugBaseCharacter.Registry.Keys.Contains(sprites.owner))
+        for (int i = 0; i < sprites.colorAmount; ++i)
+          sprites.colors[i] = PlayerColor.GetCustomColor(self, i);
+      // Use existing custom colours, if SlugBase isn't present
+      else if (PlayerGraphics.CustomColorsEnabled())
+        for (int i = 0; i < sprites.colorAmount; ++i)
+          sprites.colors[i] = PlayerGraphics.customColors[i];
+    }
 
-    // If I figure out, how to retrieve indexes, can use the instead(just big IL hook, which I'm lazy to do)
-    // getting needed name part from base sprite works fine so far
-
-    // Would need to rewrite that part too lol
-
-    //if (sprites.additionalSprites.TryGetValue(_sprite.face, out List<SlugSpriteData> faceSpriteList))
-    //  foreach (SlugSpriteData spriteData in faceSpriteList)
-    //    spriteData._cachedFaceSpriteNames = new AGCachedStrings3Dim(new string[] { spriteData.sprite, "PFace" }, new string[] { "A", "B", "C", "D", "E" }, 9);
-    //if (sprites.additionalSprites.TryGetValue(_sprite.head, out List<SlugSpriteData> headSpriteList))
-    //  foreach (SlugSpriteData spriteData in headSpriteList)
-    //    spriteData._cachedHeads = new AGCachedStrings2Dim(new string[] { $"{spriteData.sprite}A", $"{spriteData.sprite}B", $"{spriteData.sprite}C" }, 18);
-    //if (sprites.additionalSprites.TryGetValue(_sprite.arm1, out List<SlugSpriteData> armSpriteList))
-    //  foreach (SlugSpriteData spriteData in armSpriteList)
-    //    spriteData._cachedPlayerArms = new AGCachedStrings(armSprite.sprite, 13);
-    //if (sprites.additionalSprites.TryGetValue(_sprite.legs, out List<SlugSpriteData> legsSpriteList))
-    //  foreach (SlugSpriteData spriteData in legsSpriteList)
-    //  {
-    //    spriteData._cachedLegsA = new AGCachedStrings($"{spriteData.sprite}A", 31);
-    //    spriteData._cachedLegsACrawling = new AGCachedStrings($"{spriteData.sprite}ACrawling", 31);
-    //    spriteData._cachedLegsAClimbing = new AGCachedStrings($"{spriteData.sprite}AClimbing", 31);
-    //    spriteData._cachedLegsAOnPole = new AGCachedStrings($"{spriteData.sprite}AOnPole", 31);
-    //  }
+    foreach (List<SlugSpriteData> spriteList in sprites.additionalSprites)
+      if (spriteList != null)
+        foreach (SlugSpriteData spriteData in spriteList)
+          foreach (Animation animation in spriteData.animations)
+            animation.Initialize(self, sLeaser, sprites, spriteData);
   }
 
   public static SlugcatSprites InitiateSprites(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser)
@@ -471,32 +645,7 @@ public class SpriteHandler
     sprites.CustomTail?.CreateSprites(sLeaser, _sprite.itail);
     sprites.CustomOther?.CreateSprites(sLeaser, _sprite.ibody);
 
-    sprites.colors = new Color[Math.Max(sprites.colorAmount, 2)];
-    if (sprites.colors.Length == 2)
-    {
-      sprites.colors[0] = sLeaser.sprites[_sprite.ibody].color;
-      sprites.colors[1] = sLeaser.sprites[_sprite.iface].color;
-    }
-
-    // Use default colour sets, when they can't be customized
-    if (sprites.colorSets != null && (self.owner.room.game.session is ArenaGameSession || self.owner.room.game.session is StoryGameSession
-      && self.useJollyColor && RWCustom.Custom.rainWorld.options.jollyColorMode == Options.JollyColorMode.AUTO))
-      for (int i = 0; i < sprites.colorAmount; ++i)
-        sprites.colors[i] = sprites.colorSets[(self.owner as Player).playerState.playerNumber % 4][i];
-    // Use SlugBase colours if it's present
-    else if (Plugin.isSlugBaseActive && SlugBaseCharacter.Registry.Keys.Contains(sprites.owner))
-      for (int i = 0; i < sprites.colorAmount; ++i)
-        sprites.colors[i] = PlayerColor.GetCustomColor(self, i);
-    // Use existing custom colours, if SlugBase isn't present
-    else if (PlayerGraphics.CustomColorsEnabled())
-      for (int i = 0; i < sprites.colorAmount; ++i)
-        sprites.colors[i] = PlayerGraphics.customColors[i];
-
-    foreach (List<SlugSpriteData> spriteList in sprites.additionalSprites)
-      if (spriteList != null)
-        foreach (SlugSpriteData spriteData in spriteList)
-          foreach (Animation animation in spriteData.animations)
-            animation.Initialize(self, sLeaser, sprites, spriteData);
+    InitializeColors(self, sLeaser, sprites);
 
     return sprites;
   }
@@ -505,7 +654,11 @@ public class SpriteHandler
   {
     if (Plugin.pluginInterface.debugMode.Value)
     {
-      ManagedPlayerData managedPlayer = managedPlayers.GetOrCreateValue(self.owner as Player);
+      ManagedPlayerData managedPlayer = managedPlayers.GetValue(self.owner as Player, p =>
+      {
+        managedPlayerList.Add(new(p));
+        return new();
+      });
       managedPlayer.rCam = rCam;
       managedPlayer.sLeaser = sLeaser;
     }
@@ -513,32 +666,8 @@ public class SpriteHandler
     if (!self.TryGetSupportedSlugcat(out SlugcatSprites sprites))
       return null;
 
-    if (sprites.BaseLegs != null)
-    {
-      FSprite legsSprite = sLeaser.sprites[_sprite.ilegs];
-      string currentName = legsSprite._element.name;
-      if (currentName.StartsWith("LegsA"))
-      {
-        switch (currentName.Substring(5, currentName.Length - 6))
-        {
-          case "Air":
-            legsSprite.SetSpriteFromName(sprites._cachedLegsM.AAir0);
-            break;
-          case "Pol":
-            legsSprite.SetSpriteFromName(sprites._cachedLegsM.APole);
-            break;
-          case "VerticalPol":
-            legsSprite.SetSpriteFromName(sprites._cachedLegsM.AVerticalPole);
-            break;
-          case "Wal":
-            legsSprite.SetSpriteFromName(sprites._cachedLegsM.AWall);
-            break;
-          case "OnPol":
-            legsSprite.SetSpriteFromName(sprites._cachedLegsM.AOnPole[currentName[currentName.Length - 1] - '0']);
-            break;
-        }
-      }
-    }
+    if (sprites.colors[0] != sLeaser.sprites[_sprite.ibody]._color)
+      InitializeColors(self, sLeaser, sprites);
 
     foreach (List<SlugSpriteData> spriteList in sprites.additionalUpdatable)
       foreach (SlugSpriteData spriteData in spriteList.ManageSpriteHandlers(self, sLeaser, rCam, timeStacker, camPos, sprites))
@@ -560,7 +689,7 @@ public class SpriteHandler
         sprite.isVisible = baseSprite.isVisible;
       }
 
-    sprites.CustomTail.ManageSpriteHandlersS(self, sLeaser, rCam, timeStacker, camPos, sprites);
+    sprites.CustomTail.ManageDefinedSpriteHandlers(self, sLeaser, rCam, timeStacker, camPos, sprites);
 
     foreach (SlugSpriteData spriteData in sprites.CustomOther.ManageSpriteHandlers(self, sLeaser, rCam, timeStacker, camPos, sprites))
     {
@@ -573,11 +702,13 @@ public class SpriteHandler
       sprite._areLocalVerticesDirty = baseSprite._areLocalVerticesDirty;
     }
 
-    sprites.CustomFace?.UpdateElements(sLeaser);
-    sprites.CustomHead?.UpdateElements(sLeaser);
-    sprites.CustomArm1?.UpdateElements(sLeaser);
-    sprites.CustomArm2?.UpdateElements(sLeaser);
-    sprites.CustomLegs?.UpdateElements(sLeaser);
+    sprites.UpdateElements(sLeaser, _sprite.ihead);
+    sprites.UpdateElements(sLeaser, _sprite.ilegs);
+    sprites.UpdateElements(sLeaser, _sprite.iarm1);
+    sprites.UpdateElements(sLeaser, _sprite.iarm2);
+    sprites.UpdateElements(sLeaser, _sprite.iterrainHand1);
+    sprites.UpdateElements(sLeaser, _sprite.iterrainHand2);
+    sprites.UpdateElements(sLeaser, _sprite.iface);
 
     foreach (SlugSpriteData spriteData in sprites.baseSprites)
       if (spriteData != null)
@@ -614,12 +745,8 @@ public class SpriteHandler
     }
 
     foreach (List<SlugSpriteData> spriteList in sprites.additionalUpdatable)
-    {
       spriteList?.UpdateNodes(sLeaser, spriteList[0].groupIndex);
-      // spriteList?.ApplyPartOrder(sLeaser, sprites);
-    }
     sprites.CustomTail?.UpdateNodes(sLeaser, _sprite.itail);
-    // sprites.CustomTail?.ApplyPartOrder(sLeaser, sprites);
     sprites.CustomOther?.UpdateNodes(sLeaser, otherIndexReplacer ?? _sprite.ibody);
 
     return sprites;
@@ -677,6 +804,7 @@ public class SpriteHandler
       Log.LogInfo("[*] Loading custom sprites");
       UnloadAtlases();
       customSprites.Clear();
+      CachedElements.Clear();
       playerSprites = new();
 
       List<string> paths = FileUtils.ListDirectory("slugsprites", out FileUtils.Result opResult, ".json");
@@ -724,6 +852,7 @@ public class SpriteHandler
           }
         }
       }
+
       Log.LogInfo($"[+] Finished loading sprites: {customSprites.Count}/{customSprites.Count + failureCounter} sprite sets were successfully loaded");
       Log.LogInfo($"[[#]] Finished loading process");
     }
@@ -731,25 +860,6 @@ public class SpriteHandler
     {
       Log.LogError(e);
     }
-  }
-}
-
-/// <summary>
-/// Cached names for some legs sprites, that have to be replaced manually
-/// </summary>
-public struct CachedLegsM
-{
-  public string AAir0, APole, AVerticalPole, AWall;
-  public string[] AOnPole;
-
-  public CachedLegsM(string baseName)
-  {
-    AAir0 = baseName + "AAir0";
-    APole = baseName + "APole";
-    AVerticalPole = baseName + "AVerticalPole";
-    AWall = baseName + "AWall";
-    AOnPole = new[] { baseName + "AOnPole0", baseName + "AOnPole1", baseName + "AOnPole2",
-      baseName + "AOnPole3", baseName + "AOnPole4", baseName + "AOnPole5", baseName + "AOnPole6" };
   }
 }
 
@@ -787,7 +897,6 @@ public class SlugcatSprites
   /// Order of body parts, used to customize order in which sprites are drawn
   /// </summary>
   public List<int> partOrder = new(), basePartOrder = new();
-  public CachedLegsM _cachedLegsM = new();
   public bool hasFullPartOrder = false;
   /// <summary>
   /// Index of first custom sprite
@@ -888,8 +997,6 @@ public class SlugcatSprites
 
               SlugSpriteData spriteData = new(sprite as Dictionary<string, object>);
               spriteData.groupIndex = groupIndex = _sprite.indexes[fieldName];
-              if (groupIndex == _sprite.iother && (!spriteData.mesh?.compatibleAsOther ?? false))
-                throw new Exception($"can't apply mesh \"{spriteData.mesh.name}\" to sprite of the group \"other\" due to its properties");
 
               // Debug message
               string suffix = _sprite.suffixes[groupIndex],
@@ -905,8 +1012,27 @@ public class SlugcatSprites
                 }
                 throw new Exception($"\"{spriteName}\" doesn't exist{additionalInfo}");
               }
-              if (groupIndex == _sprite.iother && spriteData.order == 0)
-                throw new Exception($"can't have sprite of this group with order 0");
+
+              // Other properties
+              if (groupIndex == _sprite.iother)
+              {
+                if (spriteData.order == 0)
+                  throw new Exception($"can't have sprite of this group with order 0");
+                if (!spriteData.mesh?.compatibleAsOther ?? false)
+                  throw new Exception($"can't apply mesh \"{spriteData.mesh.name}\" to sprite of the group \"other\" due to its properties");
+              }
+              if (_sprite.managedSprites[groupIndex])
+              {
+                spriteData.cachedElements = CachedElements.GetOrCreateWith(spriteData);
+                spriteData.lastCacheKey = spriteData.cachedElements.defaultCacheKey;
+              }
+              if (spriteData.isAsymmetric)
+              {
+                if (!_sprite.asymmetricGroups[groupIndex])
+                  throw new Exception($"sprite of group \"{fieldName}\" can't be asymmetric");
+                if (!spriteData.cachedElements.hasAsymmetricSprites)
+                  throw new Exception($"sprite \"{spriteData.sprite}\" is specified as asymmetric, but asymmetric versions could not be found");
+              }
 
               colorAmount = Math.Max(colorAmount, spriteData.colorIndex);
               if (spriteData.order == 0)
@@ -926,7 +1052,7 @@ public class SlugcatSprites
           }
           catch (Exception e)
           {
-            throw new Exception($"Error loading sprite configuration at field \"{field}\": {e}");
+            throw new Exception($"Error loading sprite configuration of group \"{field}\": {e}");
           }
         }
         additionalSprites[groupIndex]?.Sort((a, b) => a.order.CompareTo(b.order));
@@ -935,8 +1061,6 @@ public class SlugcatSprites
       ++colorAmount;
 
     SetUpdatableSpriteSets();
-    if (BaseLegs != null)
-      _cachedLegsM = new(BaseLegs.sprite);
   }
 
   public SlugcatSprites(SlugcatSprites other)
@@ -960,7 +1084,6 @@ public class SlugcatSprites
     baseSprites.CloneFrom(other.baseSprites);
     additionalSprites.CloneFrom(other.additionalSprites);
     SetUpdatableSpriteSets();
-    _cachedLegsM = other._cachedLegsM;
   }
 
   public void SetUpdatableSpriteSets()
@@ -986,6 +1109,7 @@ public class SlugSpriteData
   public int order = 0;
   /// <summary>
   /// Index of sprite in sLeaser
+  /// <para>If you're using bse sprite, it'll always be 0 - use group index instead</para>
   /// </summary>
   public int realIndex = 0;
   /// <summary>
@@ -997,7 +1121,8 @@ public class SlugSpriteData
   /// </summary>
   public int groupIndex = 0;
   public float anchorX = 0f, anchorY = 0f, scaleX = 1f, scaleY = 1f, rotation = 0f, rx = 0f, ry = 0f;
-  public bool areLocalVerticesDirty = false, isMatrixDirty = false, customOffsets = false, customScale = false, customRotation = false;
+  public bool areLocalVerticesDirty = false, isMatrixDirty = false, customOffsets = false, customScale = false, customRotation = false,
+    isAsymmetric = false, asymmetricRight = true;
   /// <summary>
   /// Sprite name
   /// </summary>
@@ -1007,21 +1132,22 @@ public class SlugSpriteData
   /// </summary>
   public string defaultSprite;
   /// <summary>
-  /// Base sprite name(used to sync animated sprite states)
+  /// Last used cached elements key(used to update asymmetric sprite states)
   /// </summary>
-  public string baseSprite;
+  public string lastCacheKey;
   /// <summary>
-  /// Previous base sprite name(used to sync animated sprite states)
+  /// Cached elements for that sprite(used to sync animated sprite states)
   /// </summary>
-  public string previousBaseSprite = "";
+  public SpecificCachedElements cachedElements;
+  /// <summary>
+  /// Previous base sprite(used to sync animated sprite states)
+  /// </summary>
+  public FAtlasElement previousBaseElement = null;
   public List<Animation> animations = new();
   public AnimationColor animationColor;
   public AnimationPos animationPos;
   public AnimationElement animationElement;
   public CustomMesh mesh;
-  //public AGCachedStrings3Dim _cachedFaceSpriteNames;
-  //public AGCachedStrings2Dim _cachedHeads;
-  //public AGCachedStrings _cachedPlayerArms, _cachedLegsA, _cachedLegsACrawling, _cachedLegsAClimbing, _cachedLegsAOnPole;
 
   public SlugSpriteData(Dictionary<string, object> spriteData)
   {
@@ -1077,6 +1203,7 @@ public class SlugSpriteData
     spriteData.TryUpdateNumber("scaleX", ref scaleX);
     spriteData.TryUpdateNumber("scaleY", ref scaleY);
     spriteData.TryUpdateNumber("rotation", ref rotation);
+    spriteData.TryUpdateValueWithType("isAsymmetric", ref isAsymmetric);
     areLocalVerticesDirty = anchorX != 0f || anchorY != 0f;
     isMatrixDirty = scaleX != 1f || scaleY != 1f || rotation != 0f;
     customOffsets = anchorX != 0f || anchorY != 0f || scaleX != 1f || scaleY != 1f;
@@ -1106,8 +1233,11 @@ public class SlugSpriteData
     customOffsets = other.customOffsets;
     customScale = other.customScale;
     customRotation = other.customRotation;
+    isAsymmetric = other.isAsymmetric;
     sprite = other.sprite;
     defaultSprite = other.defaultSprite;
+    cachedElements = other.cachedElements;
+    lastCacheKey = other.lastCacheKey;
 
     foreach (Animation animation in other.animations)
       animations.Add(animation.Clone());
@@ -1122,6 +1252,6 @@ public class SlugSpriteData
   /// </summary>
   public void ResetToCustomElement(RoomCamera.SpriteLeaser sLeaser)
   {
-    sLeaser.sprites[groupIndex].element = Futile.atlasManager._allElementsByName[defaultSprite];
+    previousBaseElement = sLeaser.sprites[groupIndex].element = Futile.atlasManager._allElementsByName[defaultSprite];
   }
 }

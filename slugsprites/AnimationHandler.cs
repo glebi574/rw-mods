@@ -1,9 +1,12 @@
 ﻿using gelbi_silly_lib;
 using gelbi_silly_lib.Converter;
+using gelbi_silly_lib.ConverterExt;
+using RWCustom;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using static slugsprites.AnimationColor;
 using static slugsprites.LogWrapper;
 
 namespace slugsprites;
@@ -161,7 +164,9 @@ public class AnimationColor : Animation
 
     public static ColorModifierType
       HSV1 = new("HSV1", true),
-      HSVB = new("HSVB", true);
+      HSVB = new("HSVB", true),
+      HSL1 = new("HSL1", true),
+      HSLB = new("HSLB", true);
   }
 
   public class ColorModifier
@@ -198,19 +203,31 @@ public class AnimationColor : Animation
       color = Color.HSVToRGB((h + modifiers[0]) % 1f, Mathf.Clamp(s * modifiers[1], 0f, 1f), Mathf.Clamp(v * modifiers[2], 0f, 1f));
     }
 
+    public void ApplyHSL(Color baseColor)
+    {
+      Vector3 HSLColor = Custom.RGB2HSL(baseColor);
+      color = Custom.HSL2RGB((HSLColor[0] + modifiers[0]) % 1f, Mathf.Clamp(HSLColor[1] * modifiers[1], 0f, 1f), Mathf.Clamp(HSLColor[2] * modifiers[2], 0f, 1f));
+    }
+
     public static void ProcessModifiers(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites, SlugSpriteData spriteData, ColorModifier[] modifiers)
     {
       ColorModifier colorModifier1 = modifiers[0];
       Color baseColor = sprites.colors[spriteData.colorIndex];
       if (colorModifier1.type == ColorModifierType.HSV1 || colorModifier1.type == ColorModifierType.HSVB)
         colorModifier1.ApplyHSV(baseColor);
+      else if (colorModifier1.type == ColorModifierType.HSL1 || colorModifier1.type == ColorModifierType.HSLB)
+        colorModifier1.ApplyHSL(baseColor);
       for (int i = 1; i < modifiers.Length; ++i)
       {
         ColorModifier colorModifier = modifiers[i];
         if (colorModifier.type == ColorModifierType.HSV1)
           colorModifier.ApplyHSV(modifiers[i - 1].color);
-        else if (colorModifier.type == ColorModifierType.HSV1)
+        else if (colorModifier.type == ColorModifierType.HSVB)
           colorModifier.ApplyHSV(baseColor);
+        else if (colorModifier.type == ColorModifierType.HSL1)
+          colorModifier.ApplyHSL(modifiers[i - 1].color);
+        else if (colorModifier.type == ColorModifierType.HSLB)
+          colorModifier.ApplyHSL(baseColor);
       }
     }
   }

@@ -22,7 +22,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.slugsprites";
   public const string PLUGIN_NAME = "SlugSprites";
-  public const string PLUGIN_VERSION = "0.2.6";
+  public const string PLUGIN_VERSION = "0.2.7";
 
   public static bool isInit = false, isSlugBaseActive = false;
 
@@ -132,16 +132,20 @@ public class Plugin : BaseUnityPlugin
       return;
     SpriteHandler.LoadCustomSprites();
     if (self.processManagerInitialized && self.processManager.currentMainLoop is RainWorldGame game)
-      foreach (AbstractCreature player in game.Players)
-        if (SpriteHandler.managedPlayers.TryGetValue(player.realizedCreature as Player, out ManagedPlayerData managedPlayer))
-        {
-          managedPlayer.sLeaser.RemoveAllSpritesFromContainer();
-          (player.realizedCreature.graphicsModule as PlayerGraphics).InitCachedSpriteNames();
-          player.realizedCreature.graphicsModule.InitiateSprites(managedPlayer.sLeaser, managedPlayer.rCam);
-          player.realizedCreature.graphicsModule.ApplyPalette(managedPlayer.sLeaser, managedPlayer.rCam, managedPlayer.rCam.currentPalette);
-          if (managedPlayer.rCam.rippleData != null)
-            CosmeticRipple.ReplaceBasicShader(managedPlayer.sLeaser.sprites);
-        }
+    {
+      SpriteHandler.managedPlayerList.RemoveAll(p => !p.TryGetTarget(out _));
+      foreach (WeakReference<Player> playerRef in SpriteHandler.managedPlayerList)
+      {
+        playerRef.TryGetTarget(out Player player);
+        SpriteHandler.managedPlayers.TryGetValue(player, out ManagedPlayerData managedPlayer);
+        managedPlayer.sLeaser.RemoveAllSpritesFromContainer();
+        (player.graphicsModule as PlayerGraphics).InitCachedSpriteNames();
+        player.graphicsModule.InitiateSprites(managedPlayer.sLeaser, managedPlayer.rCam);
+        player.graphicsModule.ApplyPalette(managedPlayer.sLeaser, managedPlayer.rCam, managedPlayer.rCam.currentPalette);
+        if (managedPlayer.rCam.rippleData != null)
+          CosmeticRipple.ReplaceBasicShader(managedPlayer.sLeaser.sprites);
+      }
+    }
   }
 
   public void PlayerGraphics_DrawSprites(ILContext il)
@@ -195,7 +199,7 @@ public class Plugin : BaseUnityPlugin
   public void PlayerGraphics_InitCachedSpriteNames(On.PlayerGraphics.orig_InitCachedSpriteNames orig, PlayerGraphics self)
   {
     orig(self);
-    SlugcatSprites sprites = SpriteHandler.InitCachedSpriteNames(self);
+    self.TryGetSupportedSlugcat(out SlugcatSprites sprites);
     OnInitCachedSpriteNames?.Invoke(self, sprites);
   }
 
