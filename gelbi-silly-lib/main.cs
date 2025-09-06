@@ -1,19 +1,15 @@
 ﻿using BepInEx;
 using System;
+using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
-
-public static class LogWrapper
-{
-  public static BepInEx.Logging.ManualLogSource Log;
-}
 
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "0gelbi.silly-lib";
   public const string PLUGIN_NAME = "gelbi's Silly Lib";
-  public const string PLUGIN_VERSION = "1.0.5";
+  public const string PLUGIN_VERSION = "1.0.6";
 
   public static PluginInterface pluginInterface;
   public static bool isInit = false;
@@ -26,15 +22,13 @@ public class Plugin : BaseUnityPlugin
 
     try
     {
-      LogWrapper.Log = Logger;
-      HighPriorityMods.Add(PLUGIN_GUID);
+      SetImplementation(Logger.LogInfo, Logger.LogMessage, Logger.LogWarning, Logger.LogError, Logger.LogFatal, Logger.LogDebug);
 
       On.RainWorld.OnModsInit += RainWorld_OnModsInit;
-      On.RainWorld.PostModsInit += RainWorld_PostModsInit;
     }
     catch (Exception e)
     {
-      Logger.LogError(e);
+      LogError(e);
     }
   }
 
@@ -44,27 +38,12 @@ public class Plugin : BaseUnityPlugin
 
     try
     {
-      pluginInterface = new PluginInterface();
+      pluginInterface = new();
       MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
     }
     catch (Exception e)
     {
-      Logger.LogError(e);
-    }
-  }
-
-  public void RainWorld_PostModsInit(On.RainWorld.orig_PostModsInit orig, RainWorld self)
-  {
-    orig(self);
-
-    try
-    {
-      On.RainWorld.PostModsInit -= RainWorld_PostModsInit;
-      IL.Menu.Remix.MenuModList.RefreshAllButtons += HighPriorityMods.MenuModList_RefreshAllButtons;
-    }
-    catch (Exception e)
-    {
-      Logger.LogError(e);
+      LogError(e);
     }
   }
 }

@@ -41,13 +41,13 @@ public static class FileUtils
   {
     List<string> paths = new(), duplicateNames = new(),
       targetPaths = new() { Path.Combine(Custom.RootFolderDirectory(), "mergedmods") };
-    for (int i = ModManager.ActiveMods.Count - 1; i >= 0; i--)
+    foreach(ModManager.Mod mod in ModManager.ActiveMods)
     {
-      if (ModManager.ActiveMods[i].hasTargetedVersionFolder)
-        targetPaths.Add(ModManager.ActiveMods[i].TargetedPath);
-      if (ModManager.ActiveMods[i].hasNewestFolder)
-        targetPaths.Add(ModManager.ActiveMods[i].NewestPath);
-      targetPaths.Add(ModManager.ActiveMods[i].path);
+      if (mod.hasTargetedVersionFolder)
+        targetPaths.Add(mod.TargetedPath);
+      if (mod.hasNewestFolder)
+        targetPaths.Add(mod.NewestPath);
+      targetPaths.Add(mod.path);
     }
     if (!moddedOnly)
       targetPaths.Add(Custom.RootFolderDirectory());

@@ -48,15 +48,15 @@ public class PluginInterface : OptionInterface
         return;
       loggedModList = true;
 
-      Log.LogInfo($" * Logging active code mods:");
+      LogInfo($" * Logging active code mods:");
       foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
         if (assembly.HasPluginClassesSafe())
-          Log.LogInfo($"{assembly.GetFullPluginName()}");
-      Log.LogInfo($" * Finished logging");
+          LogInfo($"{assembly.GetFullPluginName()}");
+      LogInfo($" * Finished logging");
 
-      Log.LogInfo($" * Logging all active mods:");
+      LogInfo($" * Logging all active mods:");
       GSLUtils.LogActiveMods();
-      Log.LogInfo($" * Finished logging");
+      LogInfo($" * Finished logging");
 
       element.greyedOut = true;
     };
@@ -66,9 +66,9 @@ public class PluginInterface : OptionInterface
       if (loggedHooks)
         return;
 
-      Log.LogInfo($" * Logging all loaded sprites:");
+      LogInfo($" * Logging all loaded sprites:");
       GSLUtils.LogAllSprites();
-      Log.LogInfo($" * Finished logging");
+      LogInfo($" * Finished logging");
     };
   }
 }

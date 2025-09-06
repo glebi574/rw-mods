@@ -1,120 +1,15 @@
-﻿using gelbi_silly_lib.Other;
-using System;
+﻿using gelbi_silly_lib.Converter;
+using gelbi_silly_lib.OtherExt;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace gelbi_silly_lib.Converter;
+namespace gelbi_silly_lib.ConverterExt;
 
 /// <summary>
-/// Converter extensions mainly for JSON reading
+/// Converter extensions for colors, ExtEnums and other things
 /// </summary>
 public static class Extensions
 {
-  public static bool TryGetValueWithType<T, TKey, TValue>(this Dictionary<TKey, TValue> self, TKey name, out T result)
-  {
-    if (self.TryGetValue(name, out TValue value) && value is T converted)
-    {
-      result = converted;
-      return true;
-    }
-    result = default;
-    return false;
-  }
-
-  public static void TryUpdateValueWithType<T, TKey, TValue>(this Dictionary<TKey, TValue> self, TKey name, ref T result)
-  {
-    if (self.TryGetValueWithType(name, out T value))
-      result = value;
-  }
-
-  public static bool TryGetNumber<TKey>(this Dictionary<TKey, object> self, TKey name, out int result)
-  {
-    if (self.TryGetValue(name, out object value))
-    {
-      result = Convert.ToInt32(value);
-      return true;
-    }
-    result = default;
-    return false;
-  }
-
-  public static bool TryGetNumber<TKey>(this Dictionary<TKey, object> self, TKey name, out long result)
-  {
-    if (self.TryGetValue(name, out object value))
-    {
-      result = Convert.ToInt64(value);
-      return true;
-    }
-    result = default;
-    return false;
-  }
-
-  public static bool TryGetNumber<TKey>(this Dictionary<TKey, object> self, TKey name, out float result)
-  {
-    if (self.TryGetValue(name, out object value))
-    {
-      result = Convert.ToSingle(value);
-      return true;
-    }
-    result = default;
-    return false;
-  }
-
-  public static bool TryGetNumber<TKey>(this Dictionary<TKey, object> self, TKey name, out double result)
-  {
-    if (self.TryGetValue(name, out object value))
-    {
-      result = Convert.ToDouble(value);
-      return true;
-    }
-    result = default;
-    return false;
-  }
-
-  public static void TryUpdateNumber<TKey>(this Dictionary<TKey, object> self, TKey name, ref int result)
-  {
-    if (self.TryGetNumber(name, out int value))
-      result = value;
-  }
-
-  public static void TryUpdateNumber<TKey>(this Dictionary<TKey, object> self, TKey name, ref long result)
-  {
-    if (self.TryGetNumber(name, out long value))
-      result = value;
-  }
-
-  public static void TryUpdateNumber<TKey>(this Dictionary<TKey, object> self, TKey name, ref float result)
-  {
-    if (self.TryGetNumber(name, out float value))
-      result = value;
-  }
-
-  public static void TryUpdateNumber<TKey>(this Dictionary<TKey, object> self, TKey name, ref double result)
-  {
-    if (self.TryGetNumber(name, out double value))
-      result = value;
-  }
-
-  public static void UpdateNumber(this List<object> self, int index, ref int result)
-  {
-    result = Convert.ToInt32(self[index]);
-  }
-
-  public static void UpdateNumber(this List<object> self, int index, ref long result)
-  {
-    result = Convert.ToInt64(self[index]);
-  }
-
-  public static void UpdateNumber(this List<object> self, int index, ref float result)
-  {
-    result = Convert.ToSingle(self[index]);
-  }
-
-  public static void UpdateNumber(this List<object> self, int index, ref double result)
-  {
-    result = Convert.ToDouble(self[index]);
-  }
-
   public static bool TryGetRGBColorFromHex<TKey>(this Dictionary<TKey, object> self, TKey name, out Color result)
   {
     if (self.TryGetValueWithType(name, out string value))
@@ -150,7 +45,7 @@ public static class Extensions
   }
 
   /*
-    If either of these throws and you're wondering why:
+    If either of these throw and you're wondering why:
     * ensure cctor for your custom ExtEnum is being called before any of these is called - typeof doesn't trigger cctor
     * ...
     * that's it ig, idk what else could throw as long as you aren't silly

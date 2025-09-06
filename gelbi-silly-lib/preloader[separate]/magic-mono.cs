@@ -1,13 +1,17 @@
-﻿using Mono.Cecil;
+﻿using gelbi_silly_lib.ReflectionUtils;
+using Mono.Cecil;
 using Mono.Cecil.Cil;
+using MonoMod.Cil;
+using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Reflection;
+using static gelbi_silly_lib.LogWrapper;
 
-namespace gelbi_silly_lib.MonoModUtilsPreloader;
+namespace gelbi_silly_lib.MonoModUtils;
 
 /// <summary>
-/// Different methods to work with MonoMod definitions
+/// Extensions for different mono related methods
 /// </summary>
 public static class Extensions
 {
@@ -41,13 +45,53 @@ public static class Extensions
   }
 
   /// <summary>
+  /// Returns target method
+  /// </summary>
+  public static MethodBase GetTarget(this IDetour self)
+  {
+    if (self is Detour detour)
+      return detour.Target;
+    if (self is Hook hook)
+      return hook.Target;
+    if (self is ILHook ilhook)
+      return ilhook.Manipulator.Method;
+    if (self is NativeDetour native && RuntimeDetourManager.nativeDetourTargets.TryGetValue(native, out MethodBase target))
+      return target;
+    return null;
+  }
+
+  /// <summary>
+  /// Returns target's assembly. Will return `null` for internal detours.
+  /// </summary>
+  public static Assembly GetAssembly(this IDetour self)
+  {
+    return self.GetTarget()?.DeclaringType?.Assembly;
+  }
+
+  /// <summary>
+  /// Returns target method definition similar to how it'd be written in c#
+  /// </summary>
+  public static string GetSimpleTargetName(this IDetour self)
+  {
+    return self.GetTarget()?.GetSimpleName();
+  }
+
+  /// <summary>
+  /// Logs body of IL hook
+  /// </summary>
+  public static void LogBody(this ILContext il)
+  {
+    LogInfo($" * Logging IL body of {il.Method}");
+    foreach (Instruction i in il.Body.Instructions)
+      LogInfo($"{i.Offset:X4}: {i.OpCode} {i.Operand}");
+  }
+
+  /// <summary>
   /// Returns string with logged il body of the method
   /// </summary>
-  public static string LogBody(this MethodDefinition self)
+  public static void LogBody(this MethodDefinition self)
   {
-    StringBuilder sb = new();
     foreach (Instruction i in self.Body.Instructions)
-      sb.AppendLine($"{i.Offset:X4}: {i.OpCode} {i.Operand}");
-    return sb.ToString();
+      LogInfo($"{i.Offset:X4}: {i.OpCode} {i.Operand}");
   }
 }
