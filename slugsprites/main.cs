@@ -22,7 +22,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.slugsprites";
   public const string PLUGIN_NAME = "SlugSprites";
-  public const string PLUGIN_VERSION = "0.2.7";
+  public const string PLUGIN_VERSION = "0.2.8";
 
   public static bool isInit = false, isSlugBaseActive = false;
 

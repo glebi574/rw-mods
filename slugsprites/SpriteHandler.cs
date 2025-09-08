@@ -572,6 +572,23 @@ public class SpriteHandler
   }
 
   /// <summary>
+  /// Sets colors from current SlugBase character
+  /// </summary>
+  public static void SetColorsFromSlugBase(PlayerGraphics self, SlugcatSprites sprites)
+  {
+    for (int i = 0; i < sprites.colorAmount; ++i)
+      sprites.colors[i] = PlayerColor.GetCustomColor(self, i);
+  }
+
+  /// <summary>
+  /// Returns <c>true</c> if slugcat is SlugBase character
+  /// </summary>
+  public static bool IsSlugBaseCharacter(SlugcatStats.Name slugcatName)
+  {
+    return SlugBaseCharacter.Registry.Keys.Contains(slugcatName);
+  }
+
+  /// <summary>
   /// Initializes colors and animations(automatically called when body color changes)
   /// </summary>
   public static void InitializeColors(PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, SlugcatSprites sprites)
@@ -591,9 +608,8 @@ public class SpriteHandler
         for (int i = 0; i < sprites.colorAmount; ++i)
           sprites.colors[i] = sprites.colorSets[(self.owner as Player).playerState.playerNumber % 4][i];
       // Use SlugBase colours if it's present
-      else if (Plugin.isSlugBaseActive && SlugBaseCharacter.Registry.Keys.Contains(sprites.owner))
-        for (int i = 0; i < sprites.colorAmount; ++i)
-          sprites.colors[i] = PlayerColor.GetCustomColor(self, i);
+      else if (Plugin.isSlugBaseActive && IsSlugBaseCharacter(sprites.owner))
+        SetColorsFromSlugBase(self, sprites);
       // Use existing custom colours, if SlugBase isn't present
       else if (PlayerGraphics.CustomColorsEnabled())
         for (int i = 0; i < sprites.colorAmount; ++i)
@@ -791,6 +807,15 @@ public class SpriteHandler
   }
 
   /// <summary>
+  /// Returns <c>true</c> if SlugBase character misses custom_colors field
+  /// </summary>
+  public static bool IsIncorrectSlugBaseCharacter(SlugcatStats.Name slugcatName)
+  {
+    return SlugBaseCharacter.TryGet(slugcatName, out SlugBaseCharacter character)
+        && !PlayerFeatures.CustomColors.TryGet(character, out _);
+  }
+
+  /// <summary>
   /// Reloads slugsprites assets and atlases
   /// </summary>
   public static void LoadCustomSprites()
@@ -826,8 +851,7 @@ public class SpriteHandler
         {
           if (slugcatSprites.Key.TryGetExtEnum(out SlugcatStats.Name slugcatName))
           {
-            if (Plugin.isSlugBaseActive && SlugBaseCharacter.TryGet(slugcatName, out SlugBaseCharacter character)
-              && !PlayerFeatures.CustomColors.TryGet(character, out _))
+            if (Plugin.isSlugBaseActive && IsIncorrectSlugBaseCharacter(slugcatName))
             {
               Log.LogError($"SlugBase config of slugcat \"{slugcatName}\" is missing required \"custom_colors\" feature - its custom sprites won't be loaded.");
               continue;
