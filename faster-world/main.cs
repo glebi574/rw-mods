@@ -29,7 +29,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.faster-world";
   public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.2";
+  public const string PLUGIN_VERSION = "1.0.3";
 
   public static bool isInit = false;
 
@@ -47,7 +47,6 @@ public class Plugin : BaseUnityPlugin
   public void Futile_ctor(On.Futile.orig_ctor orig, Futile self)
   {
     orig(self);
-
     try
     {
       IL.ModManager.RefreshModsLists += ModManager_RefreshModsLists;
@@ -118,7 +117,7 @@ public class Plugin : BaseUnityPlugin
   public static ModManager.Mod LoadModFromJson(RainWorld rainWorld, string modpath)
   {
     string folderName = Path.GetFileName(modpath),
-      folderLatest = Path.Combine(modpath, "v1.10.4"),
+      folderLatest = Path.Combine(modpath, RainWorld.GAME_VERSION_STRING),
       folderNewest = Path.Combine(modpath, "newest"),
       folderPath = modpath + Path.DirectorySeparatorChar,
       modInfoPath = folderPath + "modinfo.json";
@@ -130,7 +129,7 @@ public class Plugin : BaseUnityPlugin
       name = folderName,
       version = "",
       hideVersion = false,
-      targetGameVersion = "v1.10.4",
+      targetGameVersion = RainWorld.GAME_VERSION_STRING,
       authors = "Unknown",
       description = "No Description.",
       path = modpath,
