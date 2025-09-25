@@ -22,7 +22,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.slugsprites";
   public const string PLUGIN_NAME = "SlugSprites";
-  public const string PLUGIN_VERSION = "0.2.8";
+  public const string PLUGIN_VERSION = "0.2.9";
 
   public static bool isInit = false, isSlugBaseActive = false;
 
@@ -167,8 +167,6 @@ public class Plugin : BaseUnityPlugin
     i => i.MatchAdd(),
     i => i.MatchCallvirt<FNode>("set_scale")))
     {
-      c.Index++;
-
       c.Emit(OpCodes.Ldarg_0);
       c.Emit(OpCodes.Ldarg_1);
       c.Emit(OpCodes.Ldarg_2);
@@ -182,14 +180,8 @@ public class Plugin : BaseUnityPlugin
   {
     ILCursor c = new(il);
 
-    if (c.TryGotoNext(
-      i => i.MatchLdarg(1),
-      i => i.MatchLdarg(2),
-      i => i.MatchLdarg(0),
-      i => i.MatchLdfld<PlayerGraphics>("firstMudSprite")))
+    if (c.TryGotoNext(i => i.MatchCallvirt<GraphicsModule>("AddToContainer")))
     {
-      c.Index--;
-
       c.Emit(OpCodes.Ldarg_0);
       c.Emit(OpCodes.Ldarg_1);
       c.EmitDelegate(InitiateSprites_Wrapper);
