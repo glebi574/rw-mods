@@ -1,5 +1,6 @@
 ﻿using BepInEx;
 using gelbi_silly_lib;
+using gelbi_silly_lib.Converter;
 using gelbi_silly_lib.MonoModUtils;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
@@ -7,6 +8,7 @@ using MonoMod.RuntimeDetour;
 using RWCustom;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -16,6 +18,40 @@ using static loading_screen.LogWrapper;
 using static Menu.InitializationScreen.InitializationStep;
 
 namespace loading_screen;
+
+public class SavedData
+{
+  public SavedDataManager savedPreInit, savedOnInit, savedPostInit;
+  public Dictionary<string, object> savedTimePreInit, savedTimeOnInit, savedTimePostInit;
+  public Dictionary<string, SavedDataManager> assignedManagers;
+  public Dictionary<string, Dictionary<string, object>> assignedData;
+
+  public void Init(string filename, out SavedDataManager manager, out Dictionary<string, object> data)
+  {
+    manager = new(["gelbi"], filename);
+    data = manager.Read() ?? [];
+  }
+
+  public SavedData()
+  {
+    if (!SavedDataManager.successfullInit)
+      return;
+    Init("loading-screen-timePreInit", out savedPreInit, out savedTimePreInit);
+    Init("loading-screen-timeOnInit", out savedOnInit, out savedTimeOnInit);
+    Init("loading-screen-timePostInit", out savedPostInit, out savedTimePostInit);
+
+    assignedManagers = new() {
+      {"PreModsInit", savedPreInit},
+      {"OnModsInit", savedOnInit},
+      {"PostModsInit", savedPostInit},
+    };
+    assignedData = new() {
+      {"PreModsInit", savedTimePreInit},
+      {"OnModsInit", savedTimeOnInit},
+      {"PostModsInit", savedTimePostInit},
+    };
+  }
+}
 
 public static class LogWrapper
 {
@@ -27,10 +63,13 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.loading-screen";
   public const string PLUGIN_NAME = "Loading Screen";
-  public const string PLUGIN_VERSION = "1.0.0";
+  public const string PLUGIN_VERSION = "1.0.1";
 
   public static bool isInit = false;
   public static Assembly thisAssembly;
+  public static SavedData savedData;
+  public static Dictionary<string, double> processedMethods = [];
+  public static double estimatedTime = 0.0;
 
   public void OnEnable()
   {
@@ -39,6 +78,7 @@ public class Plugin : BaseUnityPlugin
     isInit = true;
 
     Log = Logger;
+    savedData = new();
 
     try
     {
@@ -80,6 +120,8 @@ public class Plugin : BaseUnityPlugin
   {
     try
     {
+      estimatedTime = 0.0;
+      Dictionary<string, object> savedTime = savedData.assignedData[targetName];
       StringBuilder sb = new();
       foreach (KeyValuePair<MethodBase, List<IDetour>> kvp in RuntimeDetourManager.hookMaps)
         if (kvp.Key.Name == targetName)
@@ -87,7 +129,17 @@ public class Plugin : BaseUnityPlugin
           {
             MethodBase method = detour.GetTarget();
             if (method?.DeclaringType?.DeclaringType != typeof(ModManager))
-              sb.Append($"{method.DeclaringType.FullName}.{method.Name}\n");
+            {
+              string methodName = $"{method.DeclaringType.FullName}.{method.Name}";
+              if (savedTime.TryGetValueWithType(methodName, out double time))
+              {
+                estimatedTime += time;
+                processedMethods[methodName] = time;
+              }
+              else
+                processedMethods[methodName] = 0;
+              sb.Append($"{methodName}\n");
+            }
           }
       loadingStringLeft = sb.ToString();
     }
@@ -118,8 +170,22 @@ public class Plugin : BaseUnityPlugin
     initializationScreen.currentStep = REQUIRE_RESTART;
   }
 
+  public static void UpdateSavedTime(long startTime, string initName)
+  {
+    if (processedMethods.Count == 0)
+      return;
+    SavedDataManager manager = savedData.assignedManagers[initName];
+    Dictionary<string, object> data = savedData.assignedData[initName];
+    double newTime = (double)(Stopwatch.GetTimestamp() - startTime) / Stopwatch.Frequency / processedMethods.Count;
+    foreach (KeyValuePair<string, double> entry in processedMethods)
+      data[entry.Key] = entry.Value == 0 ? newTime : entry.Value * 0.8 + newTime * 0.2;
+    manager.Write(data);
+    processedMethods.Clear();
+  }
+
   public static void RainWorld_Update(On.RainWorld.orig_Update orig, RainWorld self)
   {
+    long startTime = 0;
     switch (initState)
     {
       case ModInitState.WrapInitHooks:
@@ -131,19 +197,21 @@ public class Plugin : BaseUnityPlugin
         initState = ModInitState.PreModsInit;
         return;
       case ModInitState.PreModsInit:
+        startTime = Stopwatch.GetTimestamp();
         try
         {
           self.PreModsInit();
         }
         catch (Exception e)
         {
-          Custom.LogWarning(new string[] { "EXCEPTION IN PreModsInit", e.Message, "::", e.StackTrace });
+          Custom.LogWarning(["EXCEPTION IN PreModsInit", e.Message, "::", e.StackTrace]);
         }
         if (ModManager.CheckInitIssues(CreateRestartDialog))
         {
           UndoInit();
           return;
         }
+        UpdateSavedTime(startTime, "PreModsInit");
 
         loadingBarProgress = RXRandom.Float(0.03f) + 0.17f;
         loadingStringState = "Initializing mods - OnModsInit";
@@ -151,19 +219,21 @@ public class Plugin : BaseUnityPlugin
         initState = ModInitState.OnModsInit;
         return;
       case ModInitState.OnModsInit:
+        startTime = Stopwatch.GetTimestamp();
         try
         {
           self.OnModsInit();
         }
         catch (Exception e)
         {
-          Custom.LogWarning(new string[] { "EXCEPTION IN OnModsInit", e.Message, "::", e.StackTrace });
+          Custom.LogWarning(["EXCEPTION IN OnModsInit", e.Message, "::", e.StackTrace]);
         }
         if (ModManager.CheckInitIssues(CreateRestartDialog))
         {
           UndoInit();
           return;
         }
+        UpdateSavedTime(startTime, "OnModsInit");
 
         loadingBarProgress = RXRandom.Float(0.1f) + 0.6f;
         loadingStringState = "Initializing mods - PostModsInit";
@@ -171,19 +241,21 @@ public class Plugin : BaseUnityPlugin
         initState = ModInitState.PostModsInit;
         return;
       case ModInitState.PostModsInit:
+        startTime = Stopwatch.GetTimestamp();
         try
         {
           self.PostModsInit();
         }
         catch (Exception e)
         {
-          Custom.LogWarning(new string[] { "EXCEPTION IN PostModsInit", e.Message, "::", e.StackTrace });
+          Custom.LogWarning(["EXCEPTION IN PostModsInit", e.Message, "::", e.StackTrace]);
         }
         if (ModManager.CheckInitIssues(CreateRestartDialog))
         {
           UndoInit();
           return;
         }
+        UpdateSavedTime(startTime, "PostModsInit");
 
         loadingBarProgress = RXRandom.Float(0.03f) + 0.88f;
         loadingStringState = "Initializing mods - finalizing";
@@ -399,7 +471,7 @@ public class Plugin : BaseUnityPlugin
         GUI.skin.font = loadedFont;
     GUI.skin.font.material.mainTexture.filterMode = FilterMode.Point;
 
-    float offsetX = 0f, offsetY = 0f, scale = 0.03f, width = 1366f;
+    float offsetX = 0f, offsetY = 0f, width = 1366f;
     float loadingBarOffsetX = Screen.width / 4, loadingBarOffsetY = Screen.height * 3 / 4, loadingBarWidth = Screen.width / 2, loadingBarHeight = 30f, loadingBarInnerOffset = 3f;
     float x1 = loadingBarOffsetX, x2 = loadingBarOffsetX + loadingBarInnerOffset,
       y1 = loadingBarOffsetY, y2 = loadingBarOffsetY + loadingBarInnerOffset;
@@ -413,27 +485,22 @@ public class Plugin : BaseUnityPlugin
     GUI.DrawTexture(new Rect(x2, y2, (loadingBarWidth - loadingBarInnerOffset * 2f) * loadingBarProgress, loadingBarHeight - loadingBarInnerOffset * 2f), Texture2D.whiteTexture);
     GUI.color = color;
 
-    Matrix4x4 matrix = GUI.matrix;
-    Vector2 pivot = new(offsetX, offsetY);
-    GUIUtility.ScaleAroundPivot(new(scale, scale), pivot);
-
     GUIStyle styleCenter = new(GUI.skin.label)
     {
-      fontSize = 1366,
+      fontSize = 15,
       alignment = TextAnchor.UpperCenter,
       wordWrap = false,
       fontStyle = FontStyle.Bold
     }, styleLeft = new(GUI.skin.label)
     {
-      fontSize = 420,
+      fontSize = 12,
       wordWrap = false,
       fontStyle = FontStyle.Bold
     };
     styleCenter.normal.textColor = Color.white;
-    GUI.Label(new(offsetX / scale, (offsetY + loadingBarOffsetY + loadingBarHeight) / scale, width / scale, width / scale), $"{loadingStringState}\n{loadingStringInfo}", styleCenter);
-    GUI.Label(new(10f / scale, 10f / scale, width / scale, width / scale), $"{loadingStringLeft}", styleLeft);
-    GUI.Label(new(offsetX / scale, (offsetY + loadingBarOffsetY + loadingBarInnerOffset * 2) / scale,
-      width / scale, width / scale), $"{loadingBarProgress:P0}", styleCenter);
-    GUI.matrix = matrix;
+    GUI.Label(new(offsetX, (offsetY + loadingBarOffsetY + loadingBarHeight), width, width), $"{loadingStringState}\n{loadingStringInfo}", styleCenter);
+    GUI.Label(new(10f, 10f, width, width), $"{loadingStringLeft}", styleLeft);
+    GUI.Label(new(offsetX, (offsetY + loadingBarOffsetY + loadingBarInnerOffset),
+      width, width), $"{loadingBarProgress:P0}, ETA for stage: {estimatedTime:0.##}s", styleCenter);
   }
 }
