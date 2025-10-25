@@ -141,7 +141,7 @@ namespace gelbi_silly_lib.ReflectionUtils
         return self.GetFields(flags);
       }
       catch { }
-      return new FieldInfo[0];
+      return [];
     }
 
     /// <summary>
@@ -161,7 +161,7 @@ namespace gelbi_silly_lib.ReflectionUtils
     }
 
     /// <summary>
-    /// Returns type definition similar to how it'd be initially written in c# (doesn't append ref/out)
+    /// Returns type definition similar to how it'd be initially written in c# (doesn't differentiate ref/out)
     /// </summary>
     public static string GetSimpleName(this Type type)
     {
@@ -169,6 +169,8 @@ namespace gelbi_silly_lib.ReflectionUtils
         return name;
       if (type.IsArray)
         return $"{type.GetElementType().GetSimpleName()}[]";
+      if (type.IsByRef)
+        return $"{type.GetElementType().GetSimpleName()}&";
       if (!type.IsGenericType)
         return type.FullName;
       if (type.FullName == null)

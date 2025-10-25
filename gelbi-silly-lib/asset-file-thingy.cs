@@ -39,8 +39,8 @@ public static class FileUtils
   /// <returns></returns>
   public static List<string> ListDirectory(string path, out Result opResult, bool directories = false, bool includeDuplicates = false, bool moddedOnly = false)
   {
-    List<string> paths = new(), duplicateNames = new(),
-      targetPaths = new() { Path.Combine(Custom.RootFolderDirectory(), "mergedmods") };
+    List<string> paths = [], duplicateNames = [],
+      targetPaths = [Path.Combine(Custom.RootFolderDirectory(), "mergedmods")];
     foreach(ModManager.Mod mod in ModManager.ActiveMods)
     {
       if (mod.hasTargetedVersionFolder)
@@ -88,7 +88,7 @@ public static class FileUtils
     List<string> paths = ListDirectory(path, out opResult, false, includeDuplicates, moddedOnly);
     if (opResult == Result.Success)
     {
-      paths = paths.Where(p => p.EndsWith(extension)).ToList();
+      paths = [.. paths.Where(p => p.EndsWith(extension))];
       if (!paths.Any())
         opResult = Result.NoFilesWithExtension;
     }

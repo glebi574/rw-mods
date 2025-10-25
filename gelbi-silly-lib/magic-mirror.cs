@@ -75,7 +75,7 @@ namespace gelbi_silly_lib.ModManagerUtils
       string[] dllPaths = Directory.GetFiles(Path.GetDirectoryName(self.Location), "*.dll", SearchOption.AllDirectories);
       if (dllPaths.Length < 2)
         return self;
-      string[] dllNames = dllPaths.Select(p => Path.GetFileName(p)).ToArray();
+      string[] dllNames = [.. dllPaths.Select(p => Path.GetFileName(p))];
       return AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => dllNames.Contains(Path.GetFileName(a.Location)) && a.HasPluginClassesSafe());
     }
 
@@ -94,7 +94,7 @@ namespace gelbi_silly_lib.ModManagerUtils
     public static List<Assembly> GetAssemblies(this ModManager.Mod self)
     {
       string basePath = self.basePath.Replace('/', '\\');
-      return AppDomain.CurrentDomain.GetAssemblies().Where(a => a.Location.Replace('/', '\\').StartsWith(basePath)).ToList();
+      return [.. AppDomain.CurrentDomain.GetAssemblies().Where(a => a.Location.Replace('/', '\\').StartsWith(basePath))];
     }
 
     /// <summary>

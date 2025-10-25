@@ -17,15 +17,15 @@ public static class RuntimeDetourManager
   /// <summary>
   /// Hooks per assembly
   /// </summary>
-  public static Dictionary<Assembly, List<IDetour>> hookLists = new();
+  public static Dictionary<Assembly, List<IDetour>> hookLists = [];
   /// <summary>
   /// Hooks per hooked method
   /// </summary>
-  public static Dictionary<MethodBase, List<IDetour>> hookMaps = new();
+  public static Dictionary<MethodBase, List<IDetour>> hookMaps = [];
   /// <summary>
   /// Targets of native detours
   /// </summary>
-  public static Dictionary<NativeDetour, MethodBase> nativeDetourTargets = new();
+  public static Dictionary<NativeDetour, MethodBase> nativeDetourTargets = [];
 
   private static bool DisposeInvalidHook(IDetour self)
   {
@@ -43,7 +43,7 @@ public static class RuntimeDetourManager
     foreach (KeyValuePair<Assembly, List<IDetour>> hookListKVP in hookLists)
       hookListKVP.Value.RemoveAll(DisposeInvalidHook);
 
-    List<MethodBase> emptyMaps = new();
+    List<MethodBase> emptyMaps = [];
     foreach (KeyValuePair<MethodBase, List<IDetour>> hookMapKVP in hookMaps)
     {
       hookMapKVP.Value.RemoveAll(DisposeInvalidHook);
@@ -53,7 +53,7 @@ public static class RuntimeDetourManager
     foreach (MethodBase method in emptyMaps)
       hookMaps.Remove(method);
 
-    List<NativeDetour> invalidDetours = new();
+    List<NativeDetour> invalidDetours = [];
     foreach (KeyValuePair<NativeDetour, MethodBase> nativeKVP in nativeDetourTargets)
       if (DisposeInvalidHook(nativeKVP.Key))
         invalidDetours.Add(nativeKVP.Key);
@@ -69,12 +69,12 @@ public static class RuntimeDetourManager
     if (hookLists.TryGetValue(to.DeclaringType.Assembly, out List<IDetour> hookList))
       hookList.Add(self);
     else
-      hookLists[to.DeclaringType.Assembly] = new() { self };
+      hookLists[to.DeclaringType.Assembly] = [self];
 
     if (hookMaps.TryGetValue(from, out List<IDetour> hookMap))
       hookMap.Add(self);
     else
-      hookMaps[from] = new() { self };
+      hookMaps[from] = [self];
 
     if (self is NativeDetour native)
       nativeDetourTargets[native] = to;
@@ -116,8 +116,8 @@ public static class RuntimeDetourManager
     new Hook(typeof(Hook).GetMethod("Apply"), Hook_Apply);
     new Hook(typeof(ILHook).GetMethod("Apply"), ILHook_Apply);
     new Hook(typeof(Detour).GetMethod("Apply"), Detour_Apply);
-    new Hook(typeof(NativeDetour).GetConstructor(new Type[] { typeof(MethodBase), typeof(MethodBase), typeof(NativeDetourConfig).MakeByRefType() }), NativeDetour_ctor_mmc);
-    new Hook(typeof(NativeDetour).GetConstructor(new Type[] { typeof(MethodBase), typeof(MethodBase) }), NativeDetour_ctor_mm);
+    new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase), typeof(NativeDetourConfig).MakeByRefType()]), NativeDetour_ctor_mmc);
+    new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase)]), NativeDetour_ctor_mm);
   }
 
   /// <summary>

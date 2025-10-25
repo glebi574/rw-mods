@@ -20,15 +20,15 @@ public class PluginInterface : OptionInterface
   public override void Initialize()
   {
     OpTab optionsTab = new(this, "Options");
-    Tabs = new OpTab[] { optionsTab };
+    Tabs = [optionsTab];
 
-    options = new UIelement[] {
+    options = [
       new OpLabel(10f, 550f, "Options and tools", bigText: true),
 
       new OpSimpleButton(new(10f, 510f), new(80f, 20f), "Log hooks"),
       new OpSimpleButton(new(100f, 510f), new(80f, 20f), "Log mod list"),
       new OpSimpleButton(new(10f, 480f), new(170f, 20f), "Log loaded sprites")
-    };
+    ];
 
     optionsTab.AddItems(options);
 

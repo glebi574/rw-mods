@@ -39,8 +39,8 @@ public static class Extensions
   /// </summary>
   public static List<TypeDefinition> GetAllTypes(this ModuleDefinition self)
   {
-    List<TypeDefinition> types = new();
-    self.ForEachType(type => types.Add(type));
+    List<TypeDefinition> types = [];
+    self.ForEachType(types.Add);
     return types;
   }
 

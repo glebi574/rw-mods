@@ -9,7 +9,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "0gelbi.silly-lib";
   public const string PLUGIN_NAME = "gelbi's Silly Lib";
-  public const string PLUGIN_VERSION = "1.0.6";
+  public const string PLUGIN_VERSION = "1.0.7";
 
   public static PluginInterface pluginInterface;
   public static bool isInit = false;

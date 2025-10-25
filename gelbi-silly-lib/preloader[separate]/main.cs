@@ -64,6 +64,7 @@ public static class Patcher
     {
       LogInfo("gelbi-silly-lib-preloader ♥");
       typeof(RuntimeDetourManager).RunClassConstructor();
+      typeof(SavedDataManager).RunClassConstructor();
       yield return "";
     }
   }

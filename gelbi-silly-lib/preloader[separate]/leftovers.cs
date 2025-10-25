@@ -12,7 +12,7 @@ public static class Extensions
     if (self.TryGetValue(key, out List<V> list))
       list.Add(value);
     else
-      self[key] = new() { value };
+      self[key] = [value];
   }
 
   /// <summary>
