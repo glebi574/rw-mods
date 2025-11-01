@@ -276,7 +276,7 @@ public class Plugin : BaseUnityPlugin
     }
 
     List<ArenaSitting.ArenaPlayer> players = self.arenaSitting.players;
-    if (players.Count != 0 && playerIndex > -1 && delayedDeathCounter != players[playerIndex].deaths)
+    if (players.Count != 0 && playerIndex < players.Count && delayedDeathCounter != players[playerIndex].deaths)
     {
       delayedDeathCounter = players[playerIndex].deaths;
       needNameUpdate = true;
