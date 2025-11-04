@@ -15,7 +15,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.meadow_customizations";
   public const string PLUGIN_NAME = "Meadow Customizations";
-  public const string PLUGIN_VERSION = "1.0.3";
+  public const string PLUGIN_VERSION = "1.0.4";
 
   public PluginInterface pluginInterface;
 
@@ -235,7 +235,7 @@ public class Plugin : BaseUnityPlugin
   {
     if (OnlineManager.lobby == null || self == null || !self.playersSpawned)
       return false;
-    if (playerIndex != -1)
+    if (playerIndex != -1 && playerIndex < self.arenaSitting.players.Count)
       return true;
     ArenaOnlineGameMode onlineArena = OnlineManager.lobby.gameMode as ArenaOnlineGameMode;
     foreach (ArenaSitting.ArenaPlayer player in self.arenaSitting.players)
@@ -275,10 +275,9 @@ public class Plugin : BaseUnityPlugin
       }
     }
 
-    List<ArenaSitting.ArenaPlayer> players = self.arenaSitting.players;
-    if (players.Count != 0 && playerIndex < players.Count && delayedDeathCounter != players[playerIndex].deaths)
+    if (delayedDeathCounter != self.arenaSitting.players[playerIndex].deaths)
     {
-      delayedDeathCounter = players[playerIndex].deaths;
+      delayedDeathCounter = self.arenaSitting.players[playerIndex].deaths;
       needNameUpdate = true;
       if (delayedDeathCounter != 0)
         ++deaths;
