@@ -15,8 +15,9 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.profiler";
   public const string PLUGIN_NAME = "Profiler";
-  public const string PLUGIN_VERSION = "1.0.1";
+  public const string PLUGIN_VERSION = "1.0.2";
 
+  public static PluginInterface pluginInterface;
   public static bool isInit = false;
 
   public void OnEnable()
@@ -26,9 +27,19 @@ public class Plugin : BaseUnityPlugin
     isInit = true;
 
     Log = Logger;
+    AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
 
     On.RainWorld.OnModsInit += RainWorld_OnModsInit;
-    On.Menu.InitializationScreen.Update += InitializationScreen_Update;
+    if (Patcher.profileModInit)
+      On.Menu.InitializationScreen.Update += InitializationScreen_Update;
+  }
+
+  public void CurrentDomain_ProcessExit(object sender, EventArgs e)
+  {
+    Patcher.settings["profileGlobal"] = pluginInterface.profileGlobal.Value;
+    Patcher.settings["profileMods"] = pluginInterface.profileMods.Value;
+    Patcher.settings["profileModInit"] = pluginInterface.profileModInit.Value;
+    Patcher.saveManager.Write(Patcher.settings);
   }
 
   public void InitializationScreen_Update(On.Menu.InitializationScreen.orig_Update orig, Menu.InitializationScreen self)
@@ -47,7 +58,8 @@ public class Plugin : BaseUnityPlugin
 
     try
     {
-
+      pluginInterface = new();
+      MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
     }
     catch (Exception e)
     {
