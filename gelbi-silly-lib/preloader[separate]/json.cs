@@ -352,6 +352,11 @@ public class JsonSerializer
   /// </summary>
   public void SerializeDictionary(Dictionary<string, object> dictionary)
   {
+    if (dictionary.Count == 0)
+    {
+      builder.Append("{}");
+      return;
+    }
     builder.Append('{');
     foreach (KeyValuePair<string, object> pair in dictionary)
     {
@@ -369,6 +374,11 @@ public class JsonSerializer
   /// </summary>
   public void SerializeList(List<object> list)
   {
+    if (list.Count == 0)
+    {
+      builder.Append("[]");
+      return;
+    }
     builder.Append('[');
     foreach (object value in list)
     {
@@ -430,7 +440,7 @@ public class JsonSerializer
         if (obj is int or uint or long or ulong or byte or sbyte or short or ushort)
           builder.Append(obj.ToString());
         else if (obj is float or double or decimal)
-          builder.Append(((IFormattable)obj).ToString("0.#####", CultureInfo.InvariantCulture));
+          builder.Append(((IFormattable)obj).ToString("R", CultureInfo.InvariantCulture));
         else
           SerializeString(obj.ToString());
         return;

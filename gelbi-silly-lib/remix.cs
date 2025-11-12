@@ -72,20 +72,3 @@ public class PluginInterface : OptionInterface
     };
   }
 }
-
-/*
-
-  private OpSimpleButton logHooksButton;
-  private Vector2 logHooksButtonOffset = new(-40f, -40f);
-
-  public override void Update()
-  {
-    Vector2 target = logHooksButton.MousePos + logHooksButtonOffset;
-    if (target.sqrMagnitude < 2f)
-      return;
-    logHooksButton.pos += target.normalized;
-    logHooksButton._pos.x = Mathf.Clamp(logHooksButton.pos.x, 0f, 520f);
-    logHooksButton._pos.y = Mathf.Clamp(logHooksButton.pos.y, 0f, 520f);
-  }
-
-*/

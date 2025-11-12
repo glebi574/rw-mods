@@ -93,7 +93,7 @@ public class SavedDataManager
   }
 
   /// <summary>
-  /// Reads data from the saved file
+  /// Reads data from the saved file. Returns <c>null</c> if file doesn't exist
   /// </summary>
   public Dictionary<string, object> Read()
   {
