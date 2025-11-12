@@ -123,7 +123,7 @@ namespace gelbi_silly_lib.ModManagerUtils
       if (mod == null)
         return self.GetSimplePluginName();
       BepInPlugin attribute = self.GetPluginAttribute();
-      return $"[{mod.name}{{{attribute.Name}}} | {mod.id}{{{attribute.GUID}}} {mod.version}]";
+      return $"[{mod.name}{{{attribute.Name}}} | {mod.id}{{{attribute.GUID}}} {mod.version}] | [{self.GetSimpleName()}]";
     }
 
     /// <summary>
