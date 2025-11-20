@@ -21,8 +21,8 @@ namespace loading_screen;
 
 public class SavedData
 {
-  public SavedDataManager savedPreInit, savedOnInit, savedPostInit;
-  public Dictionary<string, object> savedTimePreInit, savedTimeOnInit, savedTimePostInit;
+  public SavedDataManager savedPreInit, savedOnInit, savedPostInit, remixSettings;
+  public Dictionary<string, object> savedTimePreInit, savedTimeOnInit, savedTimePostInit, remixSettingsData;
   public Dictionary<string, SavedDataManager> assignedManagers;
   public Dictionary<string, Dictionary<string, object>> assignedData;
 
@@ -39,6 +39,11 @@ public class SavedData
     Init("loading-screen-timePreInit", out savedPreInit, out savedTimePreInit);
     Init("loading-screen-timeOnInit", out savedOnInit, out savedTimeOnInit);
     Init("loading-screen-timePostInit", out savedPostInit, out savedTimePostInit);
+    Init("loading-screen-remix", out remixSettings, out remixSettingsData);
+
+    remixSettingsData.TryUpdateValueWithType("useRandomScene", ref Plugin.useRandomScene);
+    remixSettingsData.TryUpdateValueWithType("selectedScene", ref Plugin.selectedScene);
+    remixSettingsData.TryUpdateValueWithType("selectedScenePath", ref Plugin.selectedScenePath);
 
     assignedManagers = new() {
       {"PreModsInit", savedPreInit},
@@ -63,13 +68,14 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.loading-screen";
   public const string PLUGIN_NAME = "Loading Screen";
-  public const string PLUGIN_VERSION = "1.0.1";
+  public const string PLUGIN_VERSION = "1.0.2";
 
-  public static bool isInit = false;
-  public static Assembly thisAssembly;
+  public static bool isInit = false, useRandomScene = false;
+  public static PluginInterface pluginInterface;
   public static SavedData savedData;
   public static Dictionary<string, double> processedMethods = [];
   public static double estimatedTime = 0.0;
+  public static string defaultScene = "main menu", selectedScene = defaultScene, selectedScenePath;
 
   public void OnEnable()
   {
@@ -82,16 +88,41 @@ public class Plugin : BaseUnityPlugin
 
     try
     {
-      thisAssembly = typeof(Plugin).Assembly;
+      AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
 
       On.Futile.Init += Futile_Init;
       IL.Menu.InitializationScreen.Update += InitializationScreen_Update_ModifyInit;
       On.Menu.InitializationScreen.Update += InitializationScreen_Update;
+      On.StaticWorld.InitStaticWorld += StaticWorld_InitStaticWorld;
     }
     catch (Exception e)
     {
       Log.LogError(e);
     }
+  }
+
+  public void CurrentDomain_ProcessExit(object sender, EventArgs e)
+  {
+    if (!SavedDataManager.successfullInit)
+      return;
+    savedData.remixSettingsData["useRandomScene"] = pluginInterface.useRandomScene.Value;
+    List<string> scenes = GetAllowedScenes();
+    if (useRandomScene)
+      selectedScene = scenes[RXRandom.Int(scenes.Count)];
+    else
+      selectedScene = pluginInterface.selectedSceen.Value;
+    savedData.remixSettingsData["selectedScene"] = selectedScene;
+    if (useRandomScene || scenes.Contains(selectedScene))
+    {
+      string path = GetSelectedScenePath();
+      if (path != null)
+      {
+        int index = path.IndexOf("rainworld_data");
+        if (index != -1)
+          savedData.remixSettingsData["selectedScenePath"] = path.Substring(index);
+      }
+    }
+    savedData.remixSettings.Write(savedData.remixSettingsData);
   }
 
   public void InitializationScreen_Update_ModifyInit(ILContext il)
@@ -361,10 +392,9 @@ public class Plugin : BaseUnityPlugin
           loadingStringState = "LOCALIZATION_DEBUG";
           return;
         case WAIT_FOR_PROCESS_CHANGE:
+          loadingScreenStage = false;
           IL.Menu.InitializationScreen.Update -= InitializationScreen_Update_ModifyInit;
           On.Menu.InitializationScreen.Update -= InitializationScreen_Update;
-          loadingScreenStage = false;
-          On.Menu.MainMenu.Update += MainMenu_Update;
           return;
         default:
           loadingStringState = currentStep.ToString();
@@ -377,19 +407,21 @@ public class Plugin : BaseUnityPlugin
     }
   }
 
-  public void MainMenu_Update(On.Menu.MainMenu.orig_Update orig, Menu.MainMenu self)
+  public void StaticWorld_InitStaticWorld(On.StaticWorld.orig_InitStaticWorld orig)
   {
-    orig(self);
+    orig();
     try
     {
       loadingScreenContainer.RemoveAllChildren();
       Futile.stage.RemoveChild(loadingScreenContainer);
-      On.Menu.MainMenu.Update -= MainMenu_Update;
+      pluginInterface = new();
+      MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
     }
     catch (Exception e)
     {
       Log.LogError(e);
     }
+    On.StaticWorld.InitStaticWorld -= StaticWorld_InitStaticWorld;
   }
 
   public static bool loadingScreenStage = true;
@@ -397,43 +429,51 @@ public class Plugin : BaseUnityPlugin
   public static FContainer loadingScreenContainer;
   public static float loadingBarProgress = 0f;
   public static string loadingStringState = "", loadingStringInfo = "", loadingStringLeft = "";
-  public static string scenesPath = "RainWorld_Data\\StreamingAssets\\scenes\\",
-    sceneFolderDefault = "main menu\\",
-    sceneFolderDownpour = "main menu - downpour\\",
-    sceneFolderWatcher = "RainWorld_Data\\StreamingAssets\\mods\\watcher\\scenes\\main menu - watcher\\",
-    sceneNameDefault = "main menu - flat",
-    sceneNameDownpour = "main menu - downpour - flat",
-    sceneNameWatcher = "main menu watcher - flat";
+
+  public static List<string> GetAllowedScenes()
+  {
+    List<string> scenes = [];
+    foreach (string scenePath in FileUtils.ListDirectory("scenes", out _, true))
+    {
+      string sceneName = Path.GetFileName(scenePath);
+      if (sceneName.StartsWith("landscape") || sceneName.StartsWith("main menu") || sceneName.StartsWith("outro spinning top"))
+        scenes.Add(sceneName);
+    }
+    return scenes;
+  }
+
+  public static string GetSelectedScenePath()
+  {
+    List<string> sceneFiles = FileUtils.ListDirectory("scenes\\" + selectedScene, out FileUtils.Result opResult);
+    if (opResult == FileUtils.Result.Success)
+      foreach (string sceneFile in sceneFiles)
+        if (Path.GetFileNameWithoutExtension(sceneFile).EndsWith("flat"))
+          return sceneFile;
+    return null;
+  }
 
   public void Futile_Init(On.Futile.orig_Init orig, Futile self, FutileParams futileParams)
   {
     orig(self, futileParams);
     try
     {
-      string folderPath = sceneFolderWatcher, filePath, sceneName;
-      /*
-      if (Directory.Exists(folderPath))
-      {
-        filePath = folderPath + sceneNameWatcher + ".png";
-        sceneName = sceneNameWatcher;
-      }
-      else
-      */
-      if (Directory.Exists(folderPath = scenesPath + sceneFolderDownpour))
-      {
-        filePath = folderPath + sceneNameDownpour + ".png";
-        sceneName = sceneNameDownpour;
-      }
+      string filePath = "", previousSelectedScene = selectedScene;
+      if (selectedScenePath != null && (useRandomScene || selectedScenePath.Contains(selectedScene)) && File.Exists(selectedScenePath))
+        filePath = selectedScenePath;
       else
       {
-        folderPath = scenesPath + sceneFolderDefault;
-        filePath = folderPath + sceneNameDefault + ".png";
-        sceneName = sceneNameDefault;
+        filePath = GetSelectedScenePath();
+        if (filePath == null)
+        {
+          selectedScene = defaultScene;
+          filePath = "RainWorld_Data\\StreamingAssets\\scenes\\main menu\\main menu - flat.png";
+        }
       }
+
       Texture2D texture = new(1, 1, TextureFormat.ARGB32, false);
       AssetManager.SafeWWWLoadTexture(ref texture, filePath, true, false);
-      HeavyTexturesCache.LoadAndCacheAtlasFromTexture(sceneName, texture, false);
-      background = new(sceneName)
+      HeavyTexturesCache.LoadAndCacheAtlasFromTexture(selectedScene, texture, false);
+      background = new(selectedScene)
       {
         anchorX = 0f,
         anchorY = 0f,
@@ -443,6 +483,7 @@ public class Plugin : BaseUnityPlugin
       loadingScreenContainer.AddChild(background);
       Futile.stage.AddChild(loadingScreenContainer);
       On.Futile.Init -= Futile_Init;
+      selectedScene = previousSelectedScene;
     }
     catch (Exception e)
     {
@@ -450,12 +491,13 @@ public class Plugin : BaseUnityPlugin
     }
   }
 
-  public static bool failedToLoadFont = false;
+  public static bool failedToLoadFont = false, GUIInit = false;
   public static Font loadedFont = null;
+  public static GUIStyle styleCenter, styleLeft;
 
   public void OnGUI()
   {
-    if (!loadingScreenStage)
+    if (!loadingScreenStage || Event.current.type != EventType.Repaint)
       return;
 
     if (!failedToLoadFont)
@@ -463,13 +505,31 @@ public class Plugin : BaseUnityPlugin
       {
         string[] fontNames = Font.GetOSInstalledFontNames();
         if (fontNames.Contains("Century Gothic"))
-          GUI.skin.font = Font.CreateDynamicFontFromOSFont("Century Gothic", 72);
+          GUI.skin.font = loadedFont = Font.CreateDynamicFontFromOSFont("Century Gothic", 72);
         else
           failedToLoadFont = true;
       }
       else
         GUI.skin.font = loadedFont;
-    GUI.skin.font.material.mainTexture.filterMode = FilterMode.Point;
+
+    if (!GUIInit)
+    {
+      GUIInit = true;
+      styleCenter = new(GUI.skin.label)
+      {
+        fontSize = 15,
+        alignment = TextAnchor.UpperCenter,
+        wordWrap = false,
+        fontStyle = FontStyle.Bold
+      };
+      styleLeft = new(GUI.skin.label)
+      {
+        fontSize = 12,
+        wordWrap = false,
+        fontStyle = FontStyle.Bold
+      };
+      styleCenter.normal.textColor = Color.white;
+    }
 
     float offsetX = 0f, offsetY = 0f, width = 1366f;
     float loadingBarOffsetX = Screen.width / 4, loadingBarOffsetY = Screen.height * 3 / 4, loadingBarWidth = Screen.width / 2, loadingBarHeight = 30f, loadingBarInnerOffset = 3f;
@@ -485,19 +545,6 @@ public class Plugin : BaseUnityPlugin
     GUI.DrawTexture(new Rect(x2, y2, (loadingBarWidth - loadingBarInnerOffset * 2f) * loadingBarProgress, loadingBarHeight - loadingBarInnerOffset * 2f), Texture2D.whiteTexture);
     GUI.color = color;
 
-    GUIStyle styleCenter = new(GUI.skin.label)
-    {
-      fontSize = 15,
-      alignment = TextAnchor.UpperCenter,
-      wordWrap = false,
-      fontStyle = FontStyle.Bold
-    }, styleLeft = new(GUI.skin.label)
-    {
-      fontSize = 12,
-      wordWrap = false,
-      fontStyle = FontStyle.Bold
-    };
-    styleCenter.normal.textColor = Color.white;
     GUI.Label(new(offsetX, (offsetY + loadingBarOffsetY + loadingBarHeight), width, width), $"{loadingStringState}\n{loadingStringInfo}", styleCenter);
     GUI.Label(new(10f, 10f, width, width), $"{loadingStringLeft}", styleLeft);
     GUI.Label(new(offsetX, (offsetY + loadingBarOffsetY + loadingBarInnerOffset),
