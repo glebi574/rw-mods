@@ -42,6 +42,7 @@ public class SavedData
     Init("loading-screen-remix", out remixSettings, out remixSettingsData);
 
     remixSettingsData.TryUpdateValueWithType("useRandomScene", ref Plugin.useRandomScene);
+    remixSettingsData.TryUpdateValueWithType("showInitLists", ref Plugin.showInitLists);
     remixSettingsData.TryUpdateValueWithType("selectedScene", ref Plugin.selectedScene);
     remixSettingsData.TryUpdateValueWithType("selectedScenePath", ref Plugin.selectedScenePath);
 
@@ -68,9 +69,9 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.loading-screen";
   public const string PLUGIN_NAME = "Loading Screen";
-  public const string PLUGIN_VERSION = "1.0.2";
+  public const string PLUGIN_VERSION = "1.0.3";
 
-  public static bool isInit = false, useRandomScene = false;
+  public static bool isInit = false, useRandomScene = false, showInitLists = false;
   public static PluginInterface pluginInterface;
   public static SavedData savedData;
   public static Dictionary<string, double> processedMethods = [];
@@ -106,6 +107,7 @@ public class Plugin : BaseUnityPlugin
     if (!SavedDataManager.successfullInit)
       return;
     savedData.remixSettingsData["useRandomScene"] = pluginInterface.useRandomScene.Value;
+    savedData.remixSettingsData["showInitLists"] = pluginInterface.showInitLists.Value;
     List<string> scenes = GetAllowedScenes();
     if (useRandomScene)
       selectedScene = scenes[RXRandom.Int(scenes.Count)];
@@ -118,8 +120,7 @@ public class Plugin : BaseUnityPlugin
       if (path != null)
       {
         int index = path.IndexOf("rainworld_data");
-        if (index != -1)
-          savedData.remixSettingsData["selectedScenePath"] = path.Substring(index);
+        savedData.remixSettingsData["selectedScenePath"] = index == -1 ? path : path.Substring(index);
       }
     }
     savedData.remixSettings.Write(savedData.remixSettingsData);
@@ -159,18 +160,18 @@ public class Plugin : BaseUnityPlugin
           foreach (IDetour detour in kvp.Value)
           {
             MethodBase method = detour.GetTarget();
-            if (method?.DeclaringType?.DeclaringType != typeof(ModManager))
+            if (method?.DeclaringType?.DeclaringType == typeof(ModManager))
+              continue;
+            string methodName = $"{method.DeclaringType.FullName}.{method.Name}";
+            if (savedTime.TryGetValueWithType(methodName, out double time))
             {
-              string methodName = $"{method.DeclaringType.FullName}.{method.Name}";
-              if (savedTime.TryGetValueWithType(methodName, out double time))
-              {
-                estimatedTime += time;
-                processedMethods[methodName] = time;
-              }
-              else
-                processedMethods[methodName] = 0;
-              sb.Append($"{methodName}\n");
+              estimatedTime += time;
+              processedMethods[methodName] = time;
             }
+            else
+              processedMethods[methodName] = 0;
+            if (showInitLists)
+              sb.Append($"{methodName}\n");
           }
       loadingStringLeft = sb.ToString();
     }
@@ -447,7 +448,7 @@ public class Plugin : BaseUnityPlugin
     List<string> sceneFiles = FileUtils.ListDirectory("scenes\\" + selectedScene, out FileUtils.Result opResult);
     if (opResult == FileUtils.Result.Success)
       foreach (string sceneFile in sceneFiles)
-        if (Path.GetFileNameWithoutExtension(sceneFile).EndsWith("flat"))
+        if (Path.GetFileNameWithoutExtension(sceneFile).ToLowerInvariant().EndsWith("flat"))
           return sceneFile;
     return null;
   }
@@ -530,9 +531,9 @@ public class Plugin : BaseUnityPlugin
       };
       styleCenter.normal.textColor = Color.white;
     }
-
-    float offsetX = 0f, offsetY = 0f, width = 1366f;
-    float loadingBarOffsetX = Screen.width / 4, loadingBarOffsetY = Screen.height * 3 / 4, loadingBarWidth = Screen.width / 2, loadingBarHeight = 30f, loadingBarInnerOffset = 3f;
+    float offsetX = 0f, offsetY = 0f, width = Screen.currentResolution.width;
+    float loadingBarOffsetX = width / 4, loadingBarOffsetY = Screen.currentResolution.height * 3 / 4,
+      loadingBarWidth = width / 2, loadingBarHeight = 30f, loadingBarInnerOffset = 3f;
     float x1 = loadingBarOffsetX, x2 = loadingBarOffsetX + loadingBarInnerOffset,
       y1 = loadingBarOffsetY, y2 = loadingBarOffsetY + loadingBarInnerOffset;
     Color color = GUI.color;
@@ -545,8 +546,9 @@ public class Plugin : BaseUnityPlugin
     GUI.DrawTexture(new Rect(x2, y2, (loadingBarWidth - loadingBarInnerOffset * 2f) * loadingBarProgress, loadingBarHeight - loadingBarInnerOffset * 2f), Texture2D.whiteTexture);
     GUI.color = color;
 
+    if (showInitLists)
+      GUI.Label(new(10f, 10f, width, width), $"{loadingStringLeft}", styleLeft);
     GUI.Label(new(offsetX, (offsetY + loadingBarOffsetY + loadingBarHeight), width, width), $"{loadingStringState}\n{loadingStringInfo}", styleCenter);
-    GUI.Label(new(10f, 10f, width, width), $"{loadingStringLeft}", styleLeft);
     GUI.Label(new(offsetX, (offsetY + loadingBarOffsetY + loadingBarInnerOffset),
       width, width), $"{loadingBarProgress:P0}, ETA for stage: {estimatedTime:0.##}s", styleCenter);
   }
