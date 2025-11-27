@@ -5,6 +5,7 @@ using MonoMod.RuntimeDetour;
 using System;
 using System.Reflection;
 using static faster_world.LogWrapper;
+using MonoMod.Cil;
 
 #if _DEV
 using profiler;
@@ -22,27 +23,24 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.faster-world";
   public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.5";
+  public const string PLUGIN_VERSION = "1.0.6";
 
   public static bool isInit = false;
 
   public void OnEnable()
   {
-    if (isInit)
-      return;
-    isInit = true;
-
     Log = Logger;
 
     On.Futile.ctor += Futile_ctor;
   }
 
-  public static int i = 0;
-  public static string[] st = new string[2];
-
   public void Futile_ctor(On.Futile.orig_ctor orig, Futile self)
   {
     orig(self);
+
+    if (isInit)
+      return;
+    isInit = true;
 
     try
     {
@@ -56,7 +54,19 @@ public class Plugin : BaseUnityPlugin
 
       new NativeDetour(typeof(Dangler).GetMethod("DrawSprite"), typeof(M_Graphics).GetMethod("Dangler_DrawSprite"));
       new NativeDetour(typeof(Dangler.DanglerSegment).GetMethod("Update"), typeof(M_Graphics).GetMethod("DanglerSegment_Update"));
-      
+
+#if _DEV
+      Profiler.PatchMethods([
+        // typeof(RainWorldGame).GetConstructor([typeof(ProcessManager)]),
+        typeof(CreatureSpecificAImap).GetConstructor([typeof(AImap), typeof(CreatureTemplate)])
+      ]);
+
+      Profiler.PatchMethods([
+        M_World.AccessibilityDijkstraMapper_Update,
+        M_World.CreatureSpecificAImap_ctor,
+      ]);
+#endif
+
       new NativeDetour(typeof(WorldLoader).GetMethod("CappingBrokenExits", BindingFlags.Instance | BindingFlags.NonPublic),
         typeof(M_World).GetMethod("WorldLoader_CappingBrokenExits"));
       new NativeDetour(typeof(RoomPreprocessor).GetMethod("ConnMapToString"), typeof(M_World).GetMethod("RoomPreprocessor_ConnMapToString"));
@@ -65,24 +75,20 @@ public class Plugin : BaseUnityPlugin
       new NativeDetour(typeof(RoomPreprocessor).GetMethod("FloatArrayToString"), typeof(M_World).GetMethod("RoomPreprocessor_FloatArrayToString"));
       new NativeDetour(typeof(CreatureSpecificAImap).GetConstructor([typeof(AImap), typeof(CreatureTemplate)]), typeof(M_World).GetMethod("CreatureSpecificAImap_ctor"));
 
-#if _DEV
-      Profiler.PatchMethods(
-        typeof(RoomPreprocessor).GetMethod("PreprocessRoom")
-      );
+      new NativeDetour(typeof(Room).GetMethod("RayTraceTilesForTerrain"), typeof(M_World).GetMethod("Room_RayTraceTilesForTerrain"));
+      new NativeDetour(typeof(AImap).GetMethod("ConnectionCostForCreature"), typeof(M_World).GetMethod("AImap_ConnectionCostForCreature"));
 
-      Profiler.PatchMethods(
-        M_World.WorldLoader_CappingBrokenExits,
-        M_World.RoomPreprocessor_ConnMapToString,
-        M_World.RoomPreprocessor_CompressAIMapsToString,
-        M_World.RoomPreprocessor_IntArrayToString,
-        M_World.RoomPreprocessor_FloatArrayToString,
-        M_World.CreatureSpecificAImap_ctor
-      );
-#endif
+      new NativeDetour(typeof(AImap).GetMethod("IsTooCloseToTerrain", BindingFlags.Instance | BindingFlags.NonPublic),
+        typeof(M_World).GetMethod("AImap_IsTooCloseToTerrain"));
+      new NativeDetour(typeof(AIdataPreprocessor.AccessibilityDijkstraMapper).GetMethod("Update"), typeof(M_World).GetMethod("AccessibilityDijkstraMapper_Update"));
+
+      new ILHook(typeof(Room).GetMethod("Loaded"), UltimateMethodOptimizer);
     }
     catch (Exception e)
     {
-      Logger.LogError(e);
+      Log.LogError(e);
     }
   }
+
+  public static void UltimateMethodOptimizer(ILContext _) { /* it just works */ }
 }
