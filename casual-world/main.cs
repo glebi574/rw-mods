@@ -1,41 +1,57 @@
 ﻿using BepInEx;
-using IL.Watcher;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using UnityEngine;
-using Debug = UnityEngine.Debug;
+using static casual_world.LogWrapper;
 
-namespace casual_world
+namespace casual_world;
+
+public static class LogWrapper
 {
-  [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
-  public class Plugin : BaseUnityPlugin
+  public static BepInEx.Logging.ManualLogSource Log;
+}
+
+[BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
+public class Plugin : BaseUnityPlugin
+{
+  public const string PLUGIN_GUID = "gelbi.casual_world";
+  public const string PLUGIN_NAME = "Casual World";
+  public const string PLUGIN_VERSION = "1.0.2";
+
+  public static bool isInit = false;
+  public PluginInterface pluginInterface;
+
+  public void OnEnable()
   {
-    public const string PLUGIN_GUID = "gelbi.casual_world";
-    public const string PLUGIN_NAME = "Casual World";
-    public const string PLUGIN_VERSION = "1.0.1";
-
-    public PluginInterface pluginInterface;
-    public Hooks hooks;
-
-    public void OnEnable()
+    try
     {
+      Log = Logger;
+
       On.RainWorld.OnModsInit += RainWorld_OnModsInit;
     }
-
-    private void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
+    catch (Exception e)
     {
-      orig(self);
+      Logger.LogError(e);
+    }
+  }
 
-      pluginInterface = new();
-      MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
+  public void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
+  {
+    orig(self);
 
-      hooks = new(pluginInterface);
-      hooks.Apply();
+    if (isInit)
+      return;
+    isInit = true;
+
+    try
+    {
+      MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface = new());
+
+      new Hooks(pluginInterface).Apply();
 
       Watcher.LoachAI.Behavior.Hunt = Watcher.LoachAI.Behavior.Idle;
+    }
+    catch (Exception e)
+    {
+      Logger.LogError(e);
     }
   }
 }
