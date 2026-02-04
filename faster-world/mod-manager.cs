@@ -40,7 +40,7 @@ public static class M_ModManager
     int modAmount = modFolders.Length;
     Parallel.For(0, modFolders.Length, i =>
     {
-      ModManager.Mod mod = LoadModFromJson(rainWorld, modFolders[i]);
+      ModManager.Mod mod = ModManager.LoadModFromJson(rainWorld, modFolders[i], modFolders[i]);
       if (mod != null)
         storedMods[i] = mod;
     });
@@ -51,7 +51,7 @@ public static class M_ModManager
       {
         if (!SteamUGC.GetItemInstallInfo(subscribedItems[i], out _, out string modFolder, 1024U, out _))
           return;
-        ModManager.Mod mod = LoadModFromJson(rainWorld, modFolder);
+        ModManager.Mod mod = ModManager.LoadModFromJson(rainWorld, modFolder, modFolder);
         if (mod == null)
           return;
         mod.workshopId = subscribedItems[i].m_PublishedFileId;
@@ -75,7 +75,7 @@ public static class M_ModManager
       target[i] = data[i].ToString();
   }
 
-  public static ModManager.Mod LoadModFromJson(RainWorld rainWorld, string modpath)
+  public static ModManager.Mod LoadModFromJson(RainWorld rainWorld, string modpath, string _)
   {
     string folderName = Path.GetFileName(modpath),
       folderLatest = Path.Combine(modpath, gameVersion),
@@ -192,7 +192,7 @@ public static class M_ModManager
     }
     string checksum = mod.checksumOverrideVersion || !rainWorld.options.enabledMods.Contains(mod.id)
       ? mod.version
-      : ComputeModChecksum(modpath);
+      : ModManager.ComputeModChecksum(modpath);
     if (rainWorld.options.modChecksums.TryGetValue(mod.id, out string modChecksum))
     {
       mod.checksumChanged = checksum != modChecksum;

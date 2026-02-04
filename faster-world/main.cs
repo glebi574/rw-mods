@@ -1,4 +1,4 @@
-﻿// #define _DEV
+﻿//#define _DEV
 
 using BepInEx;
 using MonoMod.RuntimeDetour;
@@ -21,11 +21,12 @@ public static class LogWrapper
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "gelbi.faster-world";
+  public const string PLUGIN_GUID = "0gelbi.faster-world";
   public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.6";
+  public const string PLUGIN_VERSION = "1.0.7";
 
   public static bool isInit = false;
+  public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
   public void OnEnable()
   {
@@ -33,6 +34,16 @@ public class Plugin : BaseUnityPlugin
 
     On.Futile.ctor += Futile_ctor;
   }
+
+  public static void UltimateMethodOptimizer(ILContext _) { /* it just works */ }
+
+  public static void Optimize<T>(string methodName) => new ILHook(typeof(T).GetMethod(methodName, flags), UltimateMethodOptimizer);
+
+  public static void Replace<T>(string methodName, Delegate target) => new NativeDetour(typeof(T).GetMethod(methodName, flags), target.Method);
+
+  public static void Replace<T>(Type[] args, Delegate target) => new NativeDetour(typeof(T).GetConstructor(flags, null, args, null), target.Method);
+
+  public static void Replace(Type type, string methodName, Delegate target) => new NativeDetour(type.GetMethod(methodName, flags), target.Method);
 
   public void Futile_ctor(On.Futile.orig_ctor orig, Futile self)
   {
@@ -44,51 +55,51 @@ public class Plugin : BaseUnityPlugin
 
     try
     {
+      #region 1.0.7
+
+      Optimize<Room>("Loaded");
+
       IL.ModManager.RefreshModsLists += M_ModManager.ModManager_RefreshModsLists;
-      new NativeDetour(typeof(ModManager).GetMethod("ComputeModChecksum"), typeof(M_ModManager).GetMethod("ComputeModChecksum"));
 
-      new NativeDetour(typeof(PhysicalObject).GetMethod("WeightedPush"), typeof(M_Math).GetMethod("PhysicalObject_WeightedPush"));
-      new NativeDetour(typeof(PhysicalObject).GetMethod("IsTileSolid"), typeof(M_Math).GetMethod("PhysicalObject_IsTileSolid"));
-      new NativeDetour(typeof(BodyPart).GetMethod("PushOutOfTerrain"), typeof(M_Math).GetMethod("BodyPart_PushOutOfTerrain"));
-      new NativeDetour(typeof(BodyPart).GetMethod("OnOtherSideOfTerrain"), typeof(M_Math).GetMethod("BodyPart_OnOtherSideOfTerrain"));
+      Replace<ModManager>("LoadModFromJson", M_ModManager.LoadModFromJson);
+      Replace<ModManager>("ComputeModChecksum", M_ModManager.ComputeModChecksum);
 
-      new NativeDetour(typeof(Dangler).GetMethod("DrawSprite"), typeof(M_Graphics).GetMethod("Dangler_DrawSprite"));
-      new NativeDetour(typeof(Dangler.DanglerSegment).GetMethod("Update"), typeof(M_Graphics).GetMethod("DanglerSegment_Update"));
+      Replace<PhysicalObject>("WeightedPush", M_Math.PhysicalObject_WeightedPush);
+      Replace<PhysicalObject>("IsTileSolid", M_Math.PhysicalObject_IsTileSolid);
+      Replace<BodyPart>("PushOutOfTerrain", M_Math.BodyPart_PushOutOfTerrain);
+      Replace<BodyPart>("OnOtherSideOfTerrain", M_Math.BodyPart_OnOtherSideOfTerrain);
+
+      Replace<Dangler>("DrawSprite", M_Graphics.Dangler_DrawSprite);
+      Replace<Dangler.DanglerSegment>("Update", M_Graphics.DanglerSegment_Update);
+
+      Replace<WorldLoader>("CappingBrokenExits", M_World.RoomPreprocessor_ConnMapToString);
+      Replace<CreatureSpecificAImap>([typeof(AImap), typeof(CreatureTemplate)], M_World.CreatureSpecificAImap_ctor);
+      Replace(typeof(RoomPreprocessor), "ConnMapToString", M_World.RoomPreprocessor_ConnMapToString);
+      Replace(typeof(RoomPreprocessor), "CompressAIMapsToString", M_World.RoomPreprocessor_CompressAIMapsToString);
+      Replace(typeof(RoomPreprocessor), "IntArrayToString", M_World.RoomPreprocessor_IntArrayToString);
+      Replace(typeof(RoomPreprocessor), "FloatArrayToString", M_World.RoomPreprocessor_FloatArrayToString);
+
+      Replace<Room>("RayTraceTilesForTerrain", M_World.Room_RayTraceTilesForTerrain);
+      Replace<AImap>("ConnectionCostForCreature", M_World.AImap_ConnectionCostForCreature);
+      Replace<AIdataPreprocessor.AccessibilityDijkstraMapper>("Update", M_World.AccessibilityDijkstraMapper_Update);
+
+      Replace<PlayerProgression>("SaveDeathPersistentDataOfCurrentState", M_Save.PlayerProgression_SaveDeathPersistentDataOfCurrentState);
+
+      #endregion
 
 #if _DEV
-      Profiler.PatchMethods([
-        // typeof(RainWorldGame).GetConstructor([typeof(ProcessManager)]),
-        typeof(CreatureSpecificAImap).GetConstructor([typeof(AImap), typeof(CreatureTemplate)])
-      ]);
+      //Profiler.PatchMethods([
+      //  typeof(PlayerProgression).GetMethod("SaveDeathPersistentDataOfCurrentState"),
+      //]);
 
       Profiler.PatchMethods([
-        M_World.AccessibilityDijkstraMapper_Update,
-        M_World.CreatureSpecificAImap_ctor,
+        M_Save.PlayerProgression_SaveDeathPersistentDataOfCurrentState,
       ]);
 #endif
-
-      new NativeDetour(typeof(WorldLoader).GetMethod("CappingBrokenExits", BindingFlags.Instance | BindingFlags.NonPublic),
-        typeof(M_World).GetMethod("WorldLoader_CappingBrokenExits"));
-      new NativeDetour(typeof(RoomPreprocessor).GetMethod("ConnMapToString"), typeof(M_World).GetMethod("RoomPreprocessor_ConnMapToString"));
-      new NativeDetour(typeof(RoomPreprocessor).GetMethod("CompressAIMapsToString"), typeof(M_World).GetMethod("RoomPreprocessor_CompressAIMapsToString"));
-      new NativeDetour(typeof(RoomPreprocessor).GetMethod("IntArrayToString"), typeof(M_World).GetMethod("RoomPreprocessor_IntArrayToString"));
-      new NativeDetour(typeof(RoomPreprocessor).GetMethod("FloatArrayToString"), typeof(M_World).GetMethod("RoomPreprocessor_FloatArrayToString"));
-      new NativeDetour(typeof(CreatureSpecificAImap).GetConstructor([typeof(AImap), typeof(CreatureTemplate)]), typeof(M_World).GetMethod("CreatureSpecificAImap_ctor"));
-
-      new NativeDetour(typeof(Room).GetMethod("RayTraceTilesForTerrain"), typeof(M_World).GetMethod("Room_RayTraceTilesForTerrain"));
-      new NativeDetour(typeof(AImap).GetMethod("ConnectionCostForCreature"), typeof(M_World).GetMethod("AImap_ConnectionCostForCreature"));
-
-      new NativeDetour(typeof(AImap).GetMethod("IsTooCloseToTerrain", BindingFlags.Instance | BindingFlags.NonPublic),
-        typeof(M_World).GetMethod("AImap_IsTooCloseToTerrain"));
-      new NativeDetour(typeof(AIdataPreprocessor.AccessibilityDijkstraMapper).GetMethod("Update"), typeof(M_World).GetMethod("AccessibilityDijkstraMapper_Update"));
-
-      new ILHook(typeof(Room).GetMethod("Loaded"), UltimateMethodOptimizer);
     }
     catch (Exception e)
     {
       Log.LogError(e);
     }
   }
-
-  public static void UltimateMethodOptimizer(ILContext _) { /* it just works */ }
 }

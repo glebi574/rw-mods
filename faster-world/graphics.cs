@@ -147,7 +147,7 @@ public static class M_Graphics
       segment.vel.y += v3y * r2;
       self.stretchedRad = self.rad * Mathf.Clamp(Mathf.Sqrt(conRad / l) * 0.5f + 0.5f, 0.2f, 1.8f);
 
-      if (self.index > 1)
+      if (self.collideWithTerrain && self.index > 1)
         for (int i = self.index + 1; i < self.dangler.gModule.owner.bodyChunks.Length; ++i)
         {
           BodyChunk bodyChunk = self.dangler.gModule.owner.bodyChunks[i];
@@ -182,7 +182,7 @@ public static class M_Graphics
     // what was that abomination [FromBaseRadius]
     for (int i = 1; i <= self.index; ++i)
       conRad += self.dangler.segments[i].conRad;
-    if (!self.OnOtherSideOfTerrain(conPos, conRad * 1.2f))
+    if (self.collideWithTerrain && !self.OnOtherSideOfTerrain(conPos, conRad * 1.2f))
       self.PushOutOfTerrain(self.gModule.owner.room, conPos);
   }
 }
