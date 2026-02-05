@@ -9,6 +9,27 @@ namespace faster_world;
 
 public static class M_World
 {
+  public static void WorldLoader_CappingBrokenExits(WorldLoader self)
+  {
+    int
+      counter = self.cntr,
+      connectionOffset = 1,
+      faultyRoom = self.faultyExits[counter].room,
+      roomIndex = faultyRoom - self.world.firstRoomIndex;
+    while (++counter < self.faultyExits.Count && self.faultyExits[counter].room == faultyRoom)
+      ++connectionOffset;
+    self.cntr = --counter;
+    AbstractRoom room = self.abstractRooms[roomIndex];
+    int[] newConnections = new int[room.connections.Length + connectionOffset];
+    for (int i = 0; i < room.connections.Length; i++)
+      newConnections[i] = room.connections[i];
+    for (int i = room.connections.Length; i < room.connections.Length + connectionOffset; ++i)
+      newConnections[i] = -1;
+    self.abstractRooms[roomIndex] = new(self.roomAdder[roomIndex][0], newConnections, faultyRoom,
+      self.swarmRoomsList.IndexOf(faultyRoom), self.sheltersList.IndexOf(faultyRoom), self.gatesList.IndexOf(faultyRoom));
+    WorldLoader.LoadAbstractRoom(self.world, self.roomAdder[roomIndex][0], self.abstractRooms[roomIndex], self.setupValues);
+  }
+
   // well that was a disappointment
   public static string RoomPreprocessor_ConnMapToString(int connMapGeneration, AbstractRoomNode[] connMap)
   {

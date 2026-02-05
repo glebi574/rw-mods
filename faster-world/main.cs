@@ -63,7 +63,7 @@ public class Plugin : BaseUnityPlugin
 
       Replace<ModManager>("LoadModFromJson", M_ModManager.LoadModFromJson);
       Replace<ModManager>("ComputeModChecksum", M_ModManager.ComputeModChecksum);
-
+      
       Replace<PhysicalObject>("WeightedPush", M_Math.PhysicalObject_WeightedPush);
       Replace<PhysicalObject>("IsTileSolid", M_Math.PhysicalObject_IsTileSolid);
       Replace<BodyPart>("PushOutOfTerrain", M_Math.BodyPart_PushOutOfTerrain);
@@ -71,8 +71,8 @@ public class Plugin : BaseUnityPlugin
 
       Replace<Dangler>("DrawSprite", M_Graphics.Dangler_DrawSprite);
       Replace<Dangler.DanglerSegment>("Update", M_Graphics.DanglerSegment_Update);
-
-      Replace<WorldLoader>("CappingBrokenExits", M_World.RoomPreprocessor_ConnMapToString);
+      
+      Replace<WorldLoader>("CappingBrokenExits", M_World.WorldLoader_CappingBrokenExits);
       Replace<CreatureSpecificAImap>([typeof(AImap), typeof(CreatureTemplate)], M_World.CreatureSpecificAImap_ctor);
       Replace(typeof(RoomPreprocessor), "ConnMapToString", M_World.RoomPreprocessor_ConnMapToString);
       Replace(typeof(RoomPreprocessor), "CompressAIMapsToString", M_World.RoomPreprocessor_CompressAIMapsToString);
