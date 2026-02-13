@@ -2,6 +2,7 @@
 using gelbi_silly_lib;
 using gelbi_silly_lib.Converter;
 using gelbi_silly_lib.MonoModUtils;
+using gelbi_silly_lib.SavedDataManagerExtensions;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
@@ -16,46 +17,73 @@ using System.Text;
 using UnityEngine;
 using static loading_screen.LogWrapper;
 using static Menu.InitializationScreen.InitializationStep;
+using static loading_screen.Plugin;
 
 namespace loading_screen;
 
+public class RemixSettings : BaseSavedDataHandler
+{
+  public RemixSettings(string filename) : base(filename) { }
+
+  public RemixSettings(string[] nestedFolders, string filename) : base(nestedFolders, filename) { }
+
+  public override void BaseLoad()
+  {
+    data.TryUpdateValueWithType("useRandomScene", ref useRandomScene);
+    data.TryUpdateValueWithType("showInitLists", ref showInitLists);
+    data.TryUpdateValueWithType("selectedScene", ref selectedScene);
+    data.TryUpdateValueWithType("selectedScenePath", ref selectedScenePath);
+  }
+}
+
+public class OIBinder(RemixSettings manager, PluginInterface oi) : BaseOIBinder<RemixSettings, PluginInterface>(manager, oi)
+{
+  public override void RemixLoad(Dictionary<string, object> data)
+  {
+    BaseLoad(data);
+    oi.useRandomScene.Value = useRandomScene;
+    oi.showInitLists.Value = showInitLists;
+    oi.selectedSceen.Value = selectedScene;
+  }
+
+  public override void RemixSave()
+  {
+    Data["useRandomScene"] = pluginInterface.useRandomScene.Value;
+    Data["showInitLists"] = pluginInterface.showInitLists.Value;
+    List<string> scenes = GetAllowedScenes();
+    if (!useRandomScene)
+      selectedScene = pluginInterface.selectedSceen.Value;
+    Data["selectedScene"] = selectedScene;
+    if (scenes.Contains(selectedScene))
+    {
+      string path = GetSelectedScenePath();
+      if (path != null)
+      {
+        int index = path.IndexOf("rainworld_data");
+        Data["selectedScenePath"] = index == -1 ? path : path.Substring(index);
+      }
+    }
+    Write();
+  }
+}
+
 public class SavedData
 {
-  public SavedDataManager savedPreInit, savedOnInit, savedPostInit, remixSettings;
-  public Dictionary<string, object> savedTimePreInit, savedTimeOnInit, savedTimePostInit, remixSettingsData;
-  public Dictionary<string, SavedDataManager> assignedManagers;
-  public Dictionary<string, Dictionary<string, object>> assignedData;
-
-  public void Init(string filename, out SavedDataManager manager, out Dictionary<string, object> data)
-  {
-    manager = new(["gelbi"], filename);
-    data = manager.Read() ?? [];
-  }
+  public Dictionary<string, SimpleSavedDataHandler> handlers;
+  public RemixSettings remixSettings;
+  public OIBinder binder;
 
   public SavedData()
   {
     if (!SavedDataManager.successfullInit)
       return;
-    Init("loading-screen-timePreInit", out savedPreInit, out savedTimePreInit);
-    Init("loading-screen-timeOnInit", out savedOnInit, out savedTimeOnInit);
-    Init("loading-screen-timePostInit", out savedPostInit, out savedTimePostInit);
-    Init("loading-screen-remix", out remixSettings, out remixSettingsData);
-
-    remixSettingsData.TryUpdateValueWithType("useRandomScene", ref Plugin.useRandomScene);
-    remixSettingsData.TryUpdateValueWithType("showInitLists", ref Plugin.showInitLists);
-    remixSettingsData.TryUpdateValueWithType("selectedScene", ref Plugin.selectedScene);
-    remixSettingsData.TryUpdateValueWithType("selectedScenePath", ref Plugin.selectedScenePath);
-
-    assignedManagers = new() {
-      {"PreModsInit", savedPreInit},
-      {"OnModsInit", savedOnInit},
-      {"PostModsInit", savedPostInit},
+    handlers = new()
+    {
+      {"PreModsInit", new(["gelbi"], "loading-screen-timePreInit")},
+      {"OnModsInit", new(["gelbi"], "loading-screen-timeOnInit")},
+      {"PostModsInit", new(["gelbi"], "loading-screen-timePostInit")}
     };
-    assignedData = new() {
-      {"PreModsInit", savedTimePreInit},
-      {"OnModsInit", savedTimeOnInit},
-      {"PostModsInit", savedTimePostInit},
-    };
+    remixSettings = new(["gelbi"], "loading-screen-remix");
   }
 }
 
@@ -69,7 +97,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "gelbi.loading-screen";
   public const string PLUGIN_NAME = "Loading Screen";
-  public const string PLUGIN_VERSION = "1.0.3";
+  public const string PLUGIN_VERSION = "1.0.4";
 
   public static bool isInit = false, useRandomScene = false, showInitLists = false;
   public static PluginInterface pluginInterface;
@@ -85,10 +113,10 @@ public class Plugin : BaseUnityPlugin
     isInit = true;
 
     Log = Logger;
-    savedData = new();
 
     try
     {
+      savedData = new();
       AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
 
       On.Futile.Init += Futile_Init;
@@ -104,26 +132,10 @@ public class Plugin : BaseUnityPlugin
 
   public void CurrentDomain_ProcessExit(object sender, EventArgs e)
   {
-    if (!SavedDataManager.successfullInit)
-      return;
-    savedData.remixSettingsData["useRandomScene"] = pluginInterface.useRandomScene.Value;
-    savedData.remixSettingsData["showInitLists"] = pluginInterface.showInitLists.Value;
     List<string> scenes = GetAllowedScenes();
     if (useRandomScene)
-      selectedScene = scenes[RXRandom.Int(scenes.Count)];
-    else
-      selectedScene = pluginInterface.selectedSceen.Value;
-    savedData.remixSettingsData["selectedScene"] = selectedScene;
-    if (useRandomScene || scenes.Contains(selectedScene))
-    {
-      string path = GetSelectedScenePath();
-      if (path != null)
-      {
-        int index = path.IndexOf("rainworld_data");
-        savedData.remixSettingsData["selectedScenePath"] = index == -1 ? path : path.Substring(index);
-      }
-    }
-    savedData.remixSettings.Write(savedData.remixSettingsData);
+      savedData.remixSettings.data["selectedScene"] = selectedScene = scenes[RXRandom.Int(scenes.Count)];
+    savedData.binder.RemixSave();
   }
 
   public void InitializationScreen_Update_ModifyInit(ILContext il)
@@ -153,7 +165,7 @@ public class Plugin : BaseUnityPlugin
     try
     {
       estimatedTime = 0.0;
-      Dictionary<string, object> savedTime = savedData.assignedData[targetName];
+      Dictionary<string, object> savedTime = savedData.handlers[targetName].data;
       StringBuilder sb = new();
       foreach (KeyValuePair<MethodBase, List<IDetour>> kvp in RuntimeDetourManager.hookMaps)
         if (kvp.Key.Name == targetName)
@@ -206,12 +218,11 @@ public class Plugin : BaseUnityPlugin
   {
     if (processedMethods.Count == 0)
       return;
-    SavedDataManager manager = savedData.assignedManagers[initName];
-    Dictionary<string, object> data = savedData.assignedData[initName];
+    Dictionary<string, object> data = savedData.handlers[initName].data;
     double newTime = (double)(Stopwatch.GetTimestamp() - startTime) / Stopwatch.Frequency / processedMethods.Count;
     foreach (KeyValuePair<string, double> entry in processedMethods)
       data[entry.Key] = entry.Value == 0 ? newTime : entry.Value * 0.8 + newTime * 0.2;
-    manager.Write(data);
+    savedData.handlers[initName].Write();
     processedMethods.Clear();
   }
 
@@ -417,6 +428,7 @@ public class Plugin : BaseUnityPlugin
       Futile.stage.RemoveChild(loadingScreenContainer);
       pluginInterface = new();
       MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
+      savedData.binder = new(savedData.remixSettings, pluginInterface);
     }
     catch (Exception e)
     {
@@ -448,8 +460,11 @@ public class Plugin : BaseUnityPlugin
     List<string> sceneFiles = FileUtils.ListDirectory("scenes\\" + selectedScene, out FileUtils.Result opResult);
     if (opResult == FileUtils.Result.Success)
       foreach (string sceneFile in sceneFiles)
-        if (Path.GetFileNameWithoutExtension(sceneFile).ToLowerInvariant().EndsWith("flat"))
+      {
+        string scenePath = Path.GetFileNameWithoutExtension(sceneFile);
+        if (scenePath.Length > 3 && scenePath.Substring(scenePath.Length - 4, 4).ToLowerInvariant() == "flat")
           return sceneFile;
+      }
     return null;
   }
 
