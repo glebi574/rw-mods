@@ -4,8 +4,10 @@ using BepInEx;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Reflection;
-using static faster_world.LogWrapper;
 using MonoMod.Cil;
+using gelbi_silly_lib;
+
+using static faster_world.LogWrapper;
 
 #if _DEV
 using profiler;
@@ -23,9 +25,9 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "0gelbi.faster-world";
   public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.7";
+  public const string PLUGIN_VERSION = "1.0.8";
 
-  public static bool isInit = false;
+  public static bool isInit = false, gslEnabled = false;
   public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
   public void OnEnable()
@@ -39,11 +41,22 @@ public class Plugin : BaseUnityPlugin
 
   public static void Optimize<T>(string methodName) => new ILHook(typeof(T).GetMethod(methodName, flags), UltimateMethodOptimizer);
 
-  public static void Replace<T>(string methodName, Delegate target) => new NativeDetour(typeof(T).GetMethod(methodName, flags), target.Method);
+  public static Action<Delegate, Delegate> ReplaceD;
+  public static Action<Type, Type[], Delegate> ReplaceC;
+  public static Action<Type, string, Delegate> ReplaceF;
 
-  public static void Replace<T>(Type[] args, Delegate target) => new NativeDetour(typeof(T).GetConstructor(flags, null, args, null), target.Method);
+  public static void VersionSpecificInit()
+  {
+    VersionSpecific.Update("1.11.6", VersionSpecific.MismatchAction.Warn);
+    ReplaceD = (from, to) => VersionSpecific.newNativeDetour(from, to);
+    ReplaceC = (type, args, target) => VersionSpecific.newNativeDetour(type.GetConstructor(flags, null, args, null), target.Method);
+    ReplaceF = (type, methodName, target) => VersionSpecific.newNativeDetour(type.GetMethod(methodName, flags), target.Method);
+  }
 
-  public static void Replace(Type type, string methodName, Delegate target) => new NativeDetour(type.GetMethod(methodName, flags), target.Method);
+  public static void SetVersionFlagImportant()
+  {
+    VersionSpecific.Update("1.11.6", VersionSpecific.MismatchAction.Skip);
+  }
 
   public void Futile_ctor(On.Futile.orig_ctor orig, Futile self)
   {
@@ -55,35 +68,53 @@ public class Plugin : BaseUnityPlugin
 
     try
     {
-      #region 1.0.7
+      foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+        if (asm.GetName().Name == "gelbi-silly-lib-preloader")
+        {
+          gslEnabled = true;
+          break;
+        }
+      if (gslEnabled)
+        VersionSpecificInit();
+      else
+      {
+        ReplaceD = (from, to) => new NativeDetour(from, to);
+        ReplaceC = (type, args, target) => new NativeDetour(type.GetConstructor(flags, null, args, null), target.Method);
+        ReplaceF = (type, methodName, target) => new NativeDetour(type.GetMethod(methodName, flags), target.Method);
+      }
 
-      Optimize<Room>("Loaded");
+      #region 1.0.8
 
       IL.ModManager.RefreshModsLists += M_ModManager.ModManager_RefreshModsLists;
 
-      Replace<ModManager>("LoadModFromJson", M_ModManager.LoadModFromJson);
-      Replace<ModManager>("ComputeModChecksum", M_ModManager.ComputeModChecksum);
-      
-      Replace<PhysicalObject>("WeightedPush", M_Math.PhysicalObject_WeightedPush);
-      Replace<PhysicalObject>("IsTileSolid", M_Math.PhysicalObject_IsTileSolid);
-      Replace<BodyPart>("PushOutOfTerrain", M_Math.BodyPart_PushOutOfTerrain);
-      Replace<BodyPart>("OnOtherSideOfTerrain", M_Math.BodyPart_OnOtherSideOfTerrain);
+      ReplaceD(ModManager.LoadModFromJson, M_ModManager.LoadModFromJson);
+      ReplaceD(ModManager.ComputeModChecksum, M_ModManager.ComputeModChecksum);
 
-      Replace<Dangler>("DrawSprite", M_Graphics.Dangler_DrawSprite);
-      Replace<Dangler.DanglerSegment>("Update", M_Graphics.DanglerSegment_Update);
-      
-      Replace<WorldLoader>("CappingBrokenExits", M_World.WorldLoader_CappingBrokenExits);
-      Replace<CreatureSpecificAImap>([typeof(AImap), typeof(CreatureTemplate)], M_World.CreatureSpecificAImap_ctor);
-      Replace(typeof(RoomPreprocessor), "ConnMapToString", M_World.RoomPreprocessor_ConnMapToString);
-      Replace(typeof(RoomPreprocessor), "CompressAIMapsToString", M_World.RoomPreprocessor_CompressAIMapsToString);
-      Replace(typeof(RoomPreprocessor), "IntArrayToString", M_World.RoomPreprocessor_IntArrayToString);
-      Replace(typeof(RoomPreprocessor), "FloatArrayToString", M_World.RoomPreprocessor_FloatArrayToString);
+      ReplaceF(typeof(PhysicalObject), "WeightedPush", M_Math.PhysicalObject_WeightedPush);
+      ReplaceF(typeof(PhysicalObject), "IsTileSolid", M_Math.PhysicalObject_IsTileSolid);
+      ReplaceF(typeof(BodyPart), "PushOutOfTerrain", M_Math.BodyPart_PushOutOfTerrain);
+      ReplaceF(typeof(BodyPart), "OnOtherSideOfTerrain", M_Math.BodyPart_OnOtherSideOfTerrain);
 
-      Replace<Room>("RayTraceTilesForTerrain", M_World.Room_RayTraceTilesForTerrain);
-      Replace<AImap>("ConnectionCostForCreature", M_World.AImap_ConnectionCostForCreature);
-      Replace<AIdataPreprocessor.AccessibilityDijkstraMapper>("Update", M_World.AccessibilityDijkstraMapper_Update);
+      ReplaceF(typeof(Dangler), "DrawSprite", M_Graphics.Dangler_DrawSprite);
+      ReplaceF(typeof(Dangler.DanglerSegment), "Update", M_Graphics.DanglerSegment_Update);
 
-      Replace<PlayerProgression>("SaveDeathPersistentDataOfCurrentState", M_Save.PlayerProgression_SaveDeathPersistentDataOfCurrentState);
+      ReplaceF(typeof(WorldLoader), "CappingBrokenExits", M_World.WorldLoader_CappingBrokenExits);
+      ReplaceC(typeof(CreatureSpecificAImap), [typeof(AImap), typeof(CreatureTemplate)], M_World.CreatureSpecificAImap_ctor);
+      ReplaceF(typeof(RoomPreprocessor), "ConnMapToString", M_World.RoomPreprocessor_ConnMapToString);
+      ReplaceF(typeof(RoomPreprocessor), "CompressAIMapsToString", M_World.RoomPreprocessor_CompressAIMapsToString);
+      ReplaceF(typeof(RoomPreprocessor), "IntArrayToString", M_World.RoomPreprocessor_IntArrayToString);
+      ReplaceF(typeof(RoomPreprocessor), "FloatArrayToString", M_World.RoomPreprocessor_FloatArrayToString);
+
+      ReplaceF(typeof(Room), "RayTraceTilesForTerrain", M_World.Room_RayTraceTilesForTerrain);
+      ReplaceF(typeof(AImap), "ConnectionCostForCreature", M_World.AImap_ConnectionCostForCreature);
+      ReplaceF(typeof(AIdataPreprocessor.AccessibilityDijkstraMapper), "Update", M_World.AccessibilityDijkstraMapper_Update);
+
+      if (gslEnabled)
+        SetVersionFlagImportant();
+
+      ReplaceF(typeof(PlayerProgression), "SaveDeathPersistentDataOfCurrentState", M_Save.PlayerProgression_SaveDeathPersistentDataOfCurrentState);
+
+      Optimize<Room>("Loaded");
 
       #endregion
 
