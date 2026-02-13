@@ -1,5 +1,5 @@
-﻿using BepInEx.Preloader.Patching;
-using gelbi_silly_lib;
+﻿using gelbi_silly_lib;
+using gelbi_silly_lib.Converter;
 using gelbi_silly_lib.ReflectionUtils;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -10,6 +10,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -18,50 +19,15 @@ using System.Threading.Tasks;
 
 namespace profiler;
 
-public class MethodStats
+public class MethodStats(object method)
 {
-  public object method = null;
+  public object method = method;
   public uint invokeCounter = 0;
   public long totalTime = 0, minTime = long.MaxValue, maxTime = 0;
-
-  public MethodStats(object method)
-  {
-    this.method = method;
-  }
 }
 
 public static class Profiler
 {
-  public static class Logger
-  {
-    public static readonly ConcurrentQueue<string> logQueue = new();
-    public static readonly AutoResetEvent logSignal = new(false);
-    public static Thread logThread;
-    public static bool running = true;
-
-    public static void Init(string path)
-    {
-      (logThread = new(() =>
-      {
-        StreamWriter writer = new(path, false);
-        while (running)
-        {
-          logSignal.WaitOne();
-          while (logQueue.TryDequeue(out string msg))
-            writer.WriteLine(msg);
-          writer.Flush();
-        }
-      })
-      { IsBackground = true }).Start();
-    }
-
-    public static void Log(string msg)
-    {
-      logQueue.Enqueue(msg);
-      logSignal.Set();
-    }
-  }
-
   public static class Processor
   {
     public static ConcurrentQueue<ProfilerEntry> queue = new();
@@ -72,7 +38,7 @@ public static class Profiler
     public static void Init(string _outputPath)
     {
       outputPath = _outputPath;
-      (worker = new Thread(Loop) { IsBackground = true }).Start();
+      (worker = new(Loop) { IsBackground = true }).Start();
       AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
     }
 
@@ -81,7 +47,7 @@ public static class Profiler
       running = false;
       worker.Join();
 
-      Log($"{Patcher.CurrentTime} Saving profiler data");
+      LogT($"Saving profiler data");
       try
       {
         StreamWriter profilerDataStream = new(outputPath, false);
@@ -95,11 +61,11 @@ public static class Profiler
             avgTime = totalTime / stats.invokeCounter,
             minTime = stats.minTime * modifier,
             maxTime = stats.maxTime * modifier;
-          profilerDataStream.WriteLine($"{(stats.method is System.Reflection.MethodBase methodBase ? methodBase.GetFullName() : stats.method)}" +
-            $"\t{avgTime:0.######}" +
-            $"\t{minTime:0.######}" +
-            $"\t{maxTime:0.######}" +
-            $"\t{totalTime:0.######}" +
+          profilerDataStream.WriteLine($"{(stats.method is System.Reflection.MethodBase methodBase ? methodBase.GetSimpleName() : stats.method)}" +
+            $"\t{avgTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
+            $"\t{minTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
+            $"\t{maxTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
+            $"\t{totalTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
             $"\t{stats.invokeCounter}");
         }
         profilerDataStream.Flush();
@@ -134,20 +100,17 @@ public static class Profiler
     public long duration = duration;
   }
 
+  public static WriterThread Logger;
   public static MethodReference Profiler_End, ref_GetTimestamp;
   public static TypeReference ref_long;
   public static List<MethodStats> methodStats = [];
   public static int index = 0;
 
-  public static void Log(string str)
-  {
-    Logger.Log(str);
-  }
+  public static void Log(string str) => Logger.WriteLine(str);
 
-  public static void LogError(object obj)
-  {
-    Logger.Log($"[Error] {obj}");
-  }
+  public static void LogT(string str) => Logger.WriteLine(DateTime.Now.ToString("[HH:mm:ss] ") + str);
+
+  public static void LogError(object obj) => Logger.WriteLine($"[Error] {obj}");
 
   public static void ProfilerPatcher(MethodDefinition method)
   {
@@ -188,50 +151,58 @@ public static class Profiler
     Processor.queue.Enqueue(new(id, Stopwatch.GetTimestamp() - startTime));
   }
 
+  /// <summary>
+  /// Patches all methods in the type with profiler patch
+  /// </summary>
+  public static void PatchType(Type type)
+  {
+    foreach (System.Reflection.MethodInfo method in type.GetMethods(BFlags.anyDeclared))
+      PatchMethod(method);
+    foreach (System.Reflection.ConstructorInfo ctor in type.GetConstructors(BFlags.anyDeclaredInstance))
+      PatchMethod(ctor);
+  }
+
+  /// <summary>
+  /// Patches method with profiler patch
+  /// </summary>
   public static void PatchMethod(System.Reflection.MethodBase methodBase)
   {
     try
     {
       new ILHook(methodBase, ProfilerHook);
       methodStats.Add(new(methodBase));
-      Log($"{Patcher.CurrentTime} Patching {methodBase.GetFullName()}");
+      LogT($"Patched {methodBase.GetFullSimpleName()}");
     }
     catch (Exception e)
     {
-      Log($"{Patcher.CurrentTime} Failed to patch {methodBase.GetFullName()}: {e}");
+      LogT($"Failed to patch {methodBase.GetFullSimpleName()}: {e}");
     }
   }
 
   /// <summary>
   /// Allows to specify methods to profile if neither of global profiling options are enabled
   /// </summary>
-  public static void PatchMethods(params System.Reflection.MethodBase[] methods)
-  {
-    if (Patcher.profileGlobal || Patcher.profileMods)
-    {
-      Log($"{Patcher.CurrentTime} Skipping additional patches");
-      return;
-    }
-    Log($"{Patcher.CurrentTime} Patching provided methods");
-    foreach (System.Reflection.MethodBase methodBase in methods)
-      PatchMethod(methodBase);
-    Log($"{Patcher.CurrentTime} Finished additional patches");
-  }
+  public static void PatchMethods(params System.Reflection.MethodBase[] methods) => PatchMethodsInternal(methods);
 
   /// <summary>
   /// Allows to specify methods to profile if neither of global profiling options are enabled
   /// </summary>
-  public static void PatchMethods(params Delegate[] methods)
+  public static void PatchMethods(params Delegate[] methods) => PatchMethodsInternal(methods);
+
+  static void PatchMethodsInternal(params object[] methods)
   {
-    if (Patcher.profileGlobal || Patcher.profileMods)
+    if (Patcher.settings.profileGlobal || Patcher.settings.profileMods)
     {
-      Log($"{Patcher.CurrentTime} Skipping additional patches");
+      LogT($"Skipping additional patches");
       return;
     }
-    Log($"{Patcher.CurrentTime} Patching provided methods");
-    foreach (Delegate method in methods)
-      PatchMethod(method.Method);
-    Log($"{Patcher.CurrentTime} Finished additional patches");
+    if (methods is Delegate[] delegates)
+      foreach (Delegate method in delegates)
+        PatchMethod(method.Method);
+    else if (methods is System.Reflection.MethodBase[] methodBases)
+      foreach (System.Reflection.MethodBase methodBase in methodBases)
+        PatchMethod(methodBase);
+    LogT($"Finished additional patches");
   }
 
   public static void ProfilerHook(ILContext il)
@@ -261,39 +232,46 @@ public static class Profiler
   }
 }
 
+public class ProfilerSettings : BaseSavedDataHandler
+{
+  public bool profileGlobal = false, conditionalProfileGlobal = true, profileMods = false, profileModInit = true;
+
+  public ProfilerSettings(string filename) : base(filename) { }
+
+  public ProfilerSettings(string[] nestedFolders, string filename) : base(nestedFolders, filename) { }
+
+  public override void BaseLoad()
+  {
+    data.TryUpdateValueWithType("profileGlobal", ref profileGlobal);
+    data.TryUpdateValueWithType("conditionalProfileGlobal", ref conditionalProfileGlobal);
+    data.TryUpdateValueWithType("profileMods", ref profileMods);
+    data.TryUpdateValueWithType("profileModInit", ref profileModInit);
+  }
+}
+
 public static class Patcher
 {
   public const string customLogsPath = "customLogs", profilerLogPath = $"{customLogsPath}/profilerLog.txt",
     profilerDataPath = $"{customLogsPath}/profilerData.txt";
 
-  public static string CurrentTime { get => $"[{DateTime.Now:HH:mm:ss}]"; }
-
-  public static SavedDataManager saveManager;
-  public static Dictionary<string, object> settings;
   public static int allPatchedMethodCounter = 0;
-  public static long initializeTime = 0;
-  public static bool profileGlobal = false, profileMods = false, profileModInit = true;
+  public static Stopwatch initializationStopwatch;
+  public static ProfilerSettings settings;
+
+  static Patcher()
+  {
+    Profiler.Logger = new(profilerLogPath);
+  }
 
   public static void Initialize()
   {
-    initializeTime = Stopwatch.GetTimestamp();
+    initializationStopwatch = Stopwatch.StartNew();
     Console.WriteLine("profiler-preloader ♥");
-    Profiler.Log($"{CurrentTime} Initializing profiler");
+    Profiler.LogT($"Initializing profiler");
 
-    saveManager = new(["gelbi"], "profiler-settings");
-    settings = saveManager.Read();
-    if (settings == null)
-      settings = [];
-    else
-    {
-      profileGlobal = (bool)settings["profileGlobal"];
-      profileMods = (bool)settings["profileMods"];
-      profileModInit = (bool)settings["profileModInit"];
-    }
+    settings = new(["gelbi"], "profiler-settings");
 
-    if (!Directory.Exists(customLogsPath))
-      Directory.CreateDirectory(customLogsPath);
-    Profiler.Logger.Init(profilerLogPath);
+    Directory.CreateDirectory(customLogsPath);
     Profiler.Processor.Init(profilerDataPath);
   }
 
@@ -301,7 +279,7 @@ public static class Patcher
   {
     get
     {
-      if (!profileGlobal)
+      if (!settings.profileGlobal)
         yield break;
       foreach (string assemblyPath in Directory.GetFiles("RainWorld_Data\\Managed").Where(p => Path.GetExtension(p) == ".dll"))
       {
@@ -314,22 +292,12 @@ public static class Patcher
 
   public static void Finish()
   {
-    Profiler.Log($"{CurrentTime} ** Finished patching initial {allPatchedMethodCounter} methods in {(double)(Stopwatch.GetTimestamp() - initializeTime) / Stopwatch.Frequency} seconds");
+    Profiler.LogT($"** Finished patching initial {allPatchedMethodCounter} methods in {initializationStopwatch.Elapsed.TotalSeconds:F6} seconds");
     if (errorCounter != 0)
       Profiler.Log($"Failed to patch {errorCounter} methods");
 
-    if (!profileMods)
-      return;
-    new Hook(typeof(System.Reflection.Assembly).GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public)
-      .First(m => m.Name == "LoadFile" && m.GetParameters().Count() == 1), Assembly_LoadFile);
-  }
-
-  public static System.Reflection.Assembly Assembly_LoadFile(Func<string, System.Reflection.Assembly> orig, string path)
-  {
-    AssemblyDefinition asm = AssemblyDefinition.ReadAssembly(path);
-    Patch(asm);
-    AssemblyPatcher.Load(asm, Path.GetFileName(path));
-    return AppDomain.CurrentDomain.GetAssemblies().Last();
+    if (settings.profileMods)
+      AssemblyUtils.AddUniversalAssemblyPatch(Patch);
   }
 
   public static int patchedMethodCounter = 0, errorCounter = 0;
@@ -338,8 +306,8 @@ public static class Patcher
   public static void Patch(AssemblyDefinition asm)
   {
     patchedMethodCounter = 0;
-    Profiler.Log($"{CurrentTime} Patching methods of {asm.Name.Name}");
-    long startTime = Stopwatch.GetTimestamp();
+    Profiler.LogT($"Patching methods of {asm.Name.Name}");
+    Stopwatch stopwatch = Stopwatch.StartNew();
     foreach (ModuleDefinition module in asm.Modules)
     {
       Profiler.Profiler_End = module.ImportReference(typeof(Profiler).GetMethod(nameof(Profiler.End)));
@@ -350,7 +318,7 @@ public static class Patcher
       foreach (TypeDefinition type in module.Types)
         PatchType(type);
     }
-    Profiler.Log($"{CurrentTime} Finished patching {patchedMethodCounter} methods in {(double)(Stopwatch.GetTimestamp() - startTime) / Stopwatch.Frequency} seconds");
+    Profiler.LogT($"Finished patching {patchedMethodCounter} methods in {stopwatch.Elapsed.TotalSeconds:F6} seconds");
   }
 
   public static readonly HashSet<string> namespacesToSkip = [
@@ -391,6 +359,7 @@ public static class Patcher
     Parallel.ForEach(type.Methods, method =>
     {
       if (method.HasBody && !method.Name.StartsWith("<") && (!method.IsConstructor || !method.IsStatic)
+        && (!settings.conditionalProfileGlobal || method.Body.Instructions.Count > 50)
         && !method.CustomAttributes.Any(a => a.AttributeType == asyncType || a.AttributeType == iteratorType)
         && !skippedMethods.Any(m => method.DeclaringType.Name == m.declaringType && method.Name == m.name))
         methods.Add(method);
