@@ -1,76 +1,72 @@
 ﻿using gelbi_silly_lib.ReflectionUtils;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 using System;
 using System.Collections.Generic;
-using static gelbi_silly_lib.LogWrapper;
+using System.Diagnostics;
 
 namespace gelbi_silly_lib;
 
-public static class LogWrapper
-{
-  static Action<object> m_LogInfo = Console.WriteLine,
-    m_LogMessage = Console.WriteLine,
-    m_LogWarning = Console.WriteLine,
-    m_LogError = Console.WriteLine,
-    m_LogFatal = Console.WriteLine,
-    m_LogDebug = Console.WriteLine;
-
-  public static void SetImplementation(Action<object> i_LogInfo, Action<object> i_LogMessage, Action<object> i_LogWarning, Action<object> i_LogError, Action<object> i_LogFatal, Action<object> i_LogDebug)
-  {
-    m_LogInfo = i_LogInfo;
-    m_LogMessage = i_LogMessage;
-    m_LogWarning = i_LogWarning;
-    m_LogDebug = i_LogDebug;
-    m_LogFatal = i_LogFatal;
-    m_LogDebug = i_LogDebug;
-  }
-
-  public static void LogInfo(object msg)
-  {
-    m_LogInfo(msg);
-  }
-
-  public static void LogMessage(object msg)
-  {
-    m_LogMessage(msg);
-  }
-
-  public static void LogWarning(object msg)
-  {
-    m_LogWarning(msg);
-  }
-
-  public static void LogError(object msg)
-  {
-    m_LogError(msg);
-  }
-
-  public static void LogFatal(object msg)
-  {
-    m_LogFatal(msg);
-  }
-
-  public static void LogDebug(object msg)
-  {
-    m_LogDebug(msg);
-  }
-}
-
 public static class Patcher
 {
+  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.0";
+
+  public static void Initialize(params Type[] modules)
+  {
+    Stopwatch start = Stopwatch.StartNew(), moduleStart = Stopwatch.StartNew();
+    GSLLog.GLog();
+    Console.WriteLine("gelbi-silly-lib-preloader ♥");
+    foreach (Type module in modules)
+    {
+      moduleStart.Restart();
+      module.RunClassConstructor();
+      GSLLog.GLog($"Initialized {module.Name} in {moduleStart.ElapsedMilliseconds}ms");
+    }
+    GSLLog.GLog($"Finished silly features initialization in {start.ElapsedMilliseconds}ms\n");
+  }
+
   public static IEnumerable<string> TargetDLLs
   {
     get
     {
-      LogInfo("gelbi-silly-lib-preloader ♥");
-      typeof(RuntimeDetourManager).RunClassConstructor();
-      typeof(SavedDataManager).RunClassConstructor();
-      yield return "";
+      Initialize([
+        typeof(OptimizedImplementation.SillyOptimizations),
+        typeof(SavedDataManager),
+        typeof(GSLSettings),
+        typeof(RuntimeDetourManager),
+        typeof(WriterThread),
+        typeof(GSLLog),
+        typeof(GSLPUtils),
+        typeof(AssemblyMap),
+        typeof(AssemblyUtils),
+        typeof(PluginUtils),
+      ]);
+
+      if (GSLSettings.instance.disableEOS)
+        yield return "com.playeveryware.eos.core.dll";
     }
+  }
+
+  public static void EmptyMethods(TypeDefinition type)
+  {
+    foreach (MethodDefinition method in type.Methods)
+      if (method.HasBody && method.ReturnType.MetadataType == MetadataType.Void)
+      {
+        method.Body.Instructions.Clear();
+        method.Body.Instructions.Add(method.Body.GetILProcessor().Create(OpCodes.Ret));
+      }
   }
 
   public static void Patch(AssemblyDefinition asm)
   {
-
+    Stopwatch start = Stopwatch.StartNew();
+    switch (asm.Name.Name)
+    {
+      case "com.playeveryware.eos.core":
+        EmptyMethods(asm.MainModule.GetType("PlayEveryWare.EpicOnlineServices.EOSManager"));
+        EmptyMethods(asm.MainModule.GetType("PlayEveryWare.EpicOnlineServices.EOSManager/EOSSingleton"));
+        break;
+    }
+    GSLLog.GLog($"Finished patching {asm.Name.Name} in {start.ElapsedMilliseconds}ms");
   }
 }

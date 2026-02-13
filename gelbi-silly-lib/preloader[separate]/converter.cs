@@ -93,48 +93,21 @@ public static class Extensions
       result = value;
   }
 
-  public static void UpdateNumber(this List<object> self, int index, ref int result)
-  {
-    result = Convert.ToInt32(self[index]);
-  }
+  public static void UpdateNumber(this List<object> self, int index, ref int result) => result = Convert.ToInt32(self[index]);
 
-  public static void UpdateNumber(this List<object> self, int index, ref long result)
-  {
-    result = Convert.ToInt64(self[index]);
-  }
+  public static void UpdateNumber(this List<object> self, int index, ref long result) => result = Convert.ToInt64(self[index]);
 
-  public static void UpdateNumber(this List<object> self, int index, ref float result)
-  {
-    result = Convert.ToSingle(self[index]);
-  }
+  public static void UpdateNumber(this List<object> self, int index, ref float result) => result = Convert.ToSingle(self[index]);
 
-  public static void UpdateNumber(this List<object> self, int index, ref double result)
-  {
-    result = Convert.ToDouble(self[index]);
-  }
+  public static void UpdateNumber(this List<object> self, int index, ref double result) => result = Convert.ToDouble(self[index]);
 
-  public static void UpdateValue(this string[] self, int index, ref bool result)
-  {
-    result = Convert.ToBoolean(self[index]);
-  }
+  public static void UpdateValue(this string[] self, int index, ref bool result) => result = Convert.ToBoolean(self[index]);
 
-  public static void UpdateNumber(this string[] self, int index, ref int result)
-  {
-    result = Convert.ToInt32(self[index]);
-  }
+  public static void UpdateNumber(this string[] self, int index, ref int result) => result = Convert.ToInt32(self[index]);
 
-  public static void UpdateNumber(this string[] self, int index, ref long result)
-  {
-    result = Convert.ToInt64(self[index]);
-  }
+  public static void UpdateNumber(this string[] self, int index, ref long result) => result = Convert.ToInt64(self[index]);
 
-  public static void UpdateNumber(this string[] self, int index, ref float result)
-  {
-    result = Convert.ToSingle(self[index]);
-  }
+  public static void UpdateNumber(this string[] self, int index, ref float result) => result = Convert.ToSingle(self[index]);
 
-  public static void UpdateNumber(this string[] self, int index, ref double result)
-  {
-    result = Convert.ToDouble(self[index]);
-  }
+  public static void UpdateNumber(this string[] self, int index, ref double result) => result = Convert.ToDouble(self[index]);
 }

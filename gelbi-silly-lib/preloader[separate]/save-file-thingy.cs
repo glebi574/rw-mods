@@ -2,9 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
@@ -103,6 +100,16 @@ public class SavedDataManager
   }
 
   /// <summary>
+  /// Reads data from the backup of the save file. Returns <c>null</c> if file doesn't exist
+  /// </summary>
+  public Dictionary<string, object> ReadBackup()
+  {
+    if (File.Exists(backupPath))
+      return (Dictionary<string, object>)JsonParser.Parse(File.ReadAllText(backupPath));
+    return null;
+  }
+
+  /// <summary>
   /// Saves data in json format to persistent path
   /// </summary>
   /// <param name="data">Dictionary to save</param>
@@ -116,4 +123,66 @@ public class SavedDataManager
       File.Copy(path, backupPath, true);
     File.WriteAllText(path, JsonSerializer.Serialize(data, makeReadable, tabSize, maxItemsToInline, inlineDictionaries));
   }
+}
+
+/// <summary>
+/// Class made to simplify handling of saved data managers
+/// </summary>
+public abstract class BaseSavedDataHandler
+{
+  public SavedDataManager manager;
+  /// <summary>
+  /// Automatically managed data, based on assigned save file
+  /// </summary>
+  public Dictionary<string, object> data;
+
+  /// <summary>
+  /// Initializes new instances of <see cref="BaseSavedDataHandler"/> and <see cref="SavedDataManager"/> classes. Reads target save file and invokes <see cref="BaseLoad"/>
+  /// </summary>
+  public BaseSavedDataHandler(string filename)
+  {
+    manager = new(filename);
+    Read();
+    BaseLoad();
+  }
+
+  /// <summary>
+  /// Initializes new instances of <see cref="BaseSavedDataHandler"/> and <see cref="SavedDataManager"/> classes. Reads target save file and invokes <see cref="BaseLoad"/>
+  /// </summary>
+  public BaseSavedDataHandler(string[] nestedFolders, string filename)
+  {
+    manager = new(nestedFolders, filename);
+    Read();
+    BaseLoad();
+  }
+
+  /// <summary>
+  /// Assignes managed data. You don't have to invoke this method unless changes are being made to assigned save file.
+  /// </summary>
+  public void Read()
+  {
+    data = manager.Read() ?? [];
+  }
+
+  /// <summary>
+  /// Writes managed data to assigned save file
+  /// </summary>
+  public void Write() => manager.Write(data);
+
+  /// <summary>
+  /// Method meant to process read data
+  /// </summary>
+  public abstract void BaseLoad();
+}
+
+/// <summary>
+/// Simple saved data handler
+/// </summary>
+public class SimpleSavedDataHandler : BaseSavedDataHandler
+{
+  public SimpleSavedDataHandler(string filename) : base(filename) { }
+
+  public SimpleSavedDataHandler(string[] nestedFolders, string filename) : base(nestedFolders, filename) { }
+
+  public override void BaseLoad() { }
 }

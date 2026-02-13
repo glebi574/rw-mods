@@ -1,237 +1,234 @@
-﻿using gelbi_silly_lib.ReflectionUtils;
+﻿using gelbi_silly_lib.Other;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using static gelbi_silly_lib.LogWrapper;
 
-namespace gelbi_silly_lib.ReflectionValueUtils
+namespace gelbi_silly_lib.ReflectionUtils;
+
+/// <summary>
+/// Some common binding flags
+/// </summary>
+public static class BFlags
 {
   /// <summary>
-  /// Extensions for Reflection, optimizing getting/setting/invoking
-  /// <para>Separated into their own namespace for being annoying</para>
+  /// <c>static / private / public</c>
   /// </summary>
-  public static class Extensions
+  public const BindingFlags anyStatic = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+  /// <summary>
+  /// <c>not static / private / public</c>
+  /// </summary>
+  public const BindingFlags anyInstance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+  /// <summary>
+  /// <c>static / not static / private / public</c>
+  /// </summary>
+  public const BindingFlags any = anyStatic | BindingFlags.Instance;
+  /// <summary>
+  /// <c>static / private / public / declared only</c>
+  /// </summary>
+  public const BindingFlags anyDeclaredStatic = anyStatic | BindingFlags.DeclaredOnly;
+  /// <summary>
+  /// <c>not static / private / public / declared only</c>
+  /// </summary>
+  public const BindingFlags anyDeclaredInstance = anyInstance | BindingFlags.DeclaredOnly;
+  /// <summary>
+  /// <c>static / not static / private / public / declared only</c>
+  /// </summary>
+  public const BindingFlags anyDeclared = any | BindingFlags.DeclaredOnly;
+}
+
+public static class ReflectionUtils
+{
+  public static readonly Dictionary<Type, string> baseTypeNameAtlas = new()
   {
-    /// <summary>
-    /// Returns value of field in provided instance
-    /// </summary>
-    public static object GetFieldValue(this object self, string fieldName)
-    {
-      return self.GetType().GetField(fieldName, BFlags.any).GetValue(self);
-    }
+    { typeof(void), "void" },
+    { typeof(string), "string" },
+    { typeof(object), "object" },
+    { typeof(bool), "bool" },
+    { typeof(char), "char" },
+    { typeof(byte), "byte" },
+    { typeof(sbyte), "sbyte" },
+    { typeof(short), "short" },
+    { typeof(ushort), "ushort" },
+    { typeof(int), "int" },
+    { typeof(uint), "uint" },
+    { typeof(long), "long" },
+    { typeof(ulong), "ulong" },
+    { typeof(float), "float" },
+    { typeof(double), "double" },
+    { typeof(decimal), "decimal" }
+  };
 
-    /// <summary>
-    /// Sets value of field in provided instance
-    /// </summary>
-    public static void SetFieldValue(this object self, string fieldName, object value)
-    {
-      self.GetType().GetField(fieldName, BFlags.any).SetValue(self, value);
-    }
-
-    /// <summary>
-    /// Invokes method in provided instance
-    /// </summary>
-    public static object InvokeStaticMethod(this object self, string fieldName, params object[] args)
-    {
-      return self.GetType().GetMethod(fieldName, BFlags.any).Invoke(self, args);
-    }
-
-    /// <summary>
-    /// Returns value of static field in provided type
-    /// </summary>
-    public static object GetStaticFieldValue(this Type self, string fieldName)
-    {
-      return self.GetField(fieldName, BFlags.any).GetValue(null);
-    }
-
-    /// <summary>
-    /// Sets value of static field in provided type
-    /// </summary>
-    public static void SetStaticFieldValue(this Type self, string fieldName, object value)
-    {
-      self.GetField(fieldName, BFlags.any).SetValue(null, value);
-    }
-
-    /// <summary>
-    /// Invokes static method in provided type
-    /// </summary>
-    public static object InvokeStaticMethod(this Type self, string fieldName, params object[] args)
-    {
-      return self.GetMethod(fieldName, BFlags.any).Invoke(null, args);
-    }
+  /// <summary>
+  /// Logs all loaded assemblies in current domain
+  /// </summary>
+  public static void LogAssemblies()
+  {
+    LogInfo($" * Logging all loaded assemblies:");
+    foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+      LogInfo("  " + asm);
+    LogInfo($" * Finished logging");
   }
 }
 
-namespace gelbi_silly_lib.ReflectionUtils
+/// <summary>
+/// Extensions for Reflection and related classes
+/// </summary>
+public static class Extensions
 {
   /// <summary>
-  /// Some common binding flags
+  /// Returns types, defined by assembly. May throw less, than default version
   /// </summary>
-  public static class BFlags
+  public static IEnumerable<Type> GetTypesSafe(this Assembly self)
   {
-    /// <summary>
-    /// <c>static / not static / private / public</c>
-    /// </summary>
-    public const BindingFlags any = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
-    /// <summary>
-    /// <c>static / private / public</c>
-    /// </summary>
-    public const BindingFlags anyStatic = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
-    /// <summary>
-    /// <c>not static / private / public</c>
-    /// </summary>
-    public const BindingFlags anyInstance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-  }
-
-  public static class ReflectionUtils
-  {
-    public static readonly Dictionary<Type, string> baseTypeNameAtlas = new()
-    {
-      { typeof(void), "void" },
-      { typeof(string), "string" },
-      { typeof(object), "object" },
-      { typeof(bool), "bool" },
-      { typeof(char), "char" },
-      { typeof(byte), "byte" },
-      { typeof(sbyte), "sbyte" },
-      { typeof(short), "short" },
-      { typeof(ushort), "ushort" },
-      { typeof(int), "int" },
-      { typeof(uint), "uint" },
-      { typeof(long), "long" },
-      { typeof(ulong), "ulong" },
-      { typeof(float), "float" },
-      { typeof(double), "double" },
-      { typeof(decimal), "decimal" }
-    };
-
-    /// <summary>
-    /// Logs all loaded assemblies in current domain
-    /// </summary>
-    public static void LogAssemblies()
-    {
-      foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
-        LogInfo(asm);
-    }
+    foreach (Module module in self.GetModules())
+      foreach (Type type in module.GetTypes())
+        yield return type;
   }
 
   /// <summary>
-  /// Extensions for Reflection
+  /// Invokes class constructor of provided type
   /// </summary>
-  public static class Extensions
+  public static void RunClassConstructor(this Type type) => System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(type.TypeHandle);
+
+  /// <summary>
+  /// Checks if type inherits other generic type
+  /// </summary>
+  public static bool InheritsGenericType(this Type self, Type other) => self.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == other);
+
+  /// <summary>
+  /// Returns effective return type of method/constructor
+  /// </summary>
+  public static Type GetReturnType(this MethodBase methodBase) => methodBase switch
   {
-    /// <summary>
-    /// Returns types, defined by assembly. May throw less, than default version
-    /// </summary>
-    public static IEnumerable<Type> GetTypesSafe(this Assembly self)
+    MethodInfo method => method.ReturnType,
+    ConstructorInfo => typeof(void),
+    _ => null,
+  };
+
+  /// <summary>
+  /// Returns string, containing formatted list of types, presented in array
+  /// </summary>
+  public static string GetFormattedTypes<T>(this T[] self) where T : Type
+  {
+    if (self.Length == 0)
+      return "";
+    StringBuilder sb = new(self[0].GetSimpleName());
+    for (int i = 1; i < self.Length; ++i)
     {
-      foreach (Module module in self.GetModules())
-        foreach (Type type in module.GetTypes())
-          yield return type;
+      sb.Append(", ");
+      sb.Append(self[i].GetSimpleName());
     }
+    return sb.ToString();
+  }
 
-    /// <summary>
-    /// Returns types, defined by assembly. May throw less, than default version
-    /// </summary>
-    public static FieldInfo[] GetFieldsSafe(this Type self, BindingFlags flags)
+  /// <summary>
+  /// Returns string, containing formatted list of parameter types, presented in array
+  /// </summary>
+  public static string GetFormattedParameterTypes(this ParameterInfo[] self)
+  {
+    if (self.Length == 0)
+      return "";
+    StringBuilder sb = new(self[0].ParameterType.GetSimpleName());
+    for (int i = 1; i < self.Length; ++i)
     {
-      try
-      {
-        return self.GetFields(flags);
-      }
-      catch { }
-      return [];
+      sb.Append(", ");
+      sb.Append(self[i].ParameterType.GetSimpleName());
     }
+    return sb.ToString();
+  }
 
-    /// <summary>
-    /// Calls <c>cctor</c> of provided type
-    /// </summary>
-    public static void RunClassConstructor(this Type type)
+  /// <summary>
+  /// Returns type definition similar to how it'd be initially written in c# (doesn't differentiate ref/out)
+  /// </summary>
+  public static string GetSimpleName(this Type self)
+  {
+    if (ReflectionUtils.baseTypeNameAtlas.TryGetValue(self, out string name))
+      return name;
+    if (self.IsArray)
+      return $"{self.GetElementType().GetSimpleName()}[{new string(',', self.GetArrayRank() - 1)}]";
+    if (self.IsByRef)
+      return $"{self.GetElementType().GetSimpleName()}&";
+    if (self.IsPointer)
+      return $"{self.GetElementType().GetSimpleName()}*";
+    if (self.IsGenericParameter)
+      return self.Name;
+    if (!self.IsGenericType)
     {
-      System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(type.TypeHandle);
+      if (self.DeclaringType == null)
+        return self.Name;
+      return $"{self.DeclaringType.GetSimpleName()}.{self.Name}";
     }
+    if (self.Namespace == "System")
+      if (self.Name.StartsWith("Nullable") && self != typeof(Nullable<>))
+        return $"{self.GenericTypeArguments[0].GetSimpleName()}?";
+      else if (self.Name.StartsWith("ValueTuple") && self != typeof(ValueTuple<>))
+        return $"({self.GenericTypeArguments.GetFormattedTypes()})";
 
-    /// <summary>
-    /// Checks if type inherits other generic type
-    /// </summary>
-    public static bool InheritsGenericType(this Type self, Type other)
-    {
-      return self.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == other);
-    }
+    if (self.IsGenericTypeDefinition)
+      return $"{self.Name.SubstringUntil('`')}<{self.GetGenericArguments().GetFormattedTypes()}>";
+    return $"{self.Name.SubstringUntil('`')}<{self.GetGenericArguments().GetFormattedTypes()}>";
+  }
 
-    /// <summary>
-    /// Returns type definition similar to how it'd be initially written in c# (doesn't differentiate ref/out)
-    /// </summary>
-    public static string GetSimpleName(this Type type)
-    {
-      if (ReflectionUtils.baseTypeNameAtlas.TryGetValue(type, out string name))
-        return name;
-      if (type.IsArray)
-        return $"{type.GetElementType().GetSimpleName()}[]";
-      if (type.IsByRef)
-        return $"{type.GetElementType().GetSimpleName()}&";
-      if (!type.IsGenericType)
-        return type.FullName;
-      if (type.FullName == null)
-        return type.ToString();
-      if (type.FullName.StartsWith("System.Nullable"))
-        return $"{type.GenericTypeArguments[0].GetSimpleName()}?";
+  /// <summary>
+  /// Returns type definition with namespace similar to how it'd be initially written in c# (doesn't differentiate ref/out)
+  /// </summary>
+  public static string GetSimpleNameWithNamespace(this Type self)
+  {
+    if (self.Namespace == null)
+      return self.GetSimpleName();
+    return self.Namespace + '.' + self.GetSimpleName();
+  }
 
-      string baseName = "";
-      if ((type.Namespace?.StartsWith("System.") ?? false) || type.Namespace == "System")
-        baseName = type.FullName.Substring(type.Namespace.Length + 1);
-      else
-        baseName = type.FullName;
-      int genericCutIndex = baseName.IndexOf('`');
-      if (genericCutIndex != -1)
-        baseName = baseName.Substring(0, genericCutIndex);
+  /// <summary>
+  /// Returns field definition similar to how it'd be written in c#
+  /// </summary>
+  public static string GetSimpleName(this FieldInfo field)
+  {
+    return $"{field.FieldType.GetSimpleName()} {field.DeclaringType.GetSimpleName()}.{field.Name}";
+  }
 
-      return $"{baseName}<{string.Join(", ", type.GenericTypeArguments.Select(GetSimpleName))}>";
-    }
+  /// <summary>
+  /// Returns method definition similar to how it'd be written in c#
+  /// </summary>
+  public static string GetSimpleName(this MethodInfo method)
+  {
+    return $"{method.ReturnType.GetSimpleName()} {method.GetFullSimpleName()}({method.GetParameters().GetFormattedParameterTypes()})";
+  }
 
-    /// <summary>
-    /// Returns field definition similar to how it'd be written in c#
-    /// </summary>
-    public static string GetSimpleName(this FieldInfo field)
-    {
-      return $"{field.FieldType.GetSimpleName()} {field.DeclaringType?.FullName}+{field.Name}";
-    }
+  /// <summary>
+  /// Returns constructor definition similar to how it'd be written in c#
+  /// </summary>
+  public static string GetSimpleName(this ConstructorInfo method)
+  {
+    return $"void {method.GetFullSimpleName()}({method.GetParameters().GetFormattedParameterTypes()})";
+  }
 
-    /// <summary>
-    /// Returns method definition similar to how it'd be written in c#
-    /// </summary>
-    public static string GetSimpleName(this MethodInfo method)
-    {
-      return $"{method.ReturnType.GetSimpleName()} {method.DeclaringType.FullName}.{method.Name}({string.Join(", ", method.GetParameters().Select(x => x.ParameterType.GetSimpleName()))})";
-    }
+  /// <summary>
+  /// Returns method definition similar to how it'd be written in c# (if possible)
+  /// </summary>
+  public static string GetSimpleName(this MethodBase method)
+  {
+    if (method is MethodInfo methodInfo)
+      return methodInfo.GetSimpleName();
+    if (method is ConstructorInfo constructorInfo)
+      return constructorInfo.GetSimpleName();
+    return method.ToString();
+  }
 
-    /// <summary>
-    /// Returns method definition similar to how it'd be written in c#
-    /// </summary>
-    public static string GetSimpleName(this ConstructorInfo method)
-    {
-      return $"{method.DeclaringType.FullName}.{method.Name}({string.Join(", ", method.GetParameters().Select(x => x.ParameterType.GetSimpleName()))})";
-    }
-
-    /// <summary>
-    /// Returns method definition similar to how it'd be written in c#
-    /// </summary>
-    public static string GetSimpleName(this MethodBase method)
-    {
-      if (method is MethodInfo methodInfo)
-        return methodInfo.GetSimpleName();
-      if (method is ConstructorInfo constructorInfo)
-        return constructorInfo.GetSimpleName();
-      return method.ToString();
-    }
-
-    /// <summary>
-    /// Returns full method name
-    /// </summary>
-    public static string GetFullName(this MethodBase method)
-    {
-      return $"{method.DeclaringType.FullName}.{method.Name}";
-    }
+  /// <summary>
+  /// Returns full method name with declaring type definition similar to how it'd be initially written in c#
+  /// </summary>
+  public static string GetFullSimpleName(this MethodBase method)
+  {
+    StringBuilder sb = new(128);
+    if (method.DeclaringType?.Namespace != null)
+      sb.Append(method.DeclaringType.Namespace).Append('.');
+    if (method.DeclaringType != null)
+      sb.Append(method.DeclaringType.GetSimpleName()).Append('.');
+    sb.Append(method.Name);
+    return sb.ToString();
   }
 }

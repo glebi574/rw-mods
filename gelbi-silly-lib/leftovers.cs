@@ -1,7 +1,5 @@
-﻿using gelbi_silly_lib.ModManagerUtils;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using UnityEngine;
 using static gelbi_silly_lib.LogWrapper;
 
@@ -36,22 +34,6 @@ namespace gelbi_silly_lib.OtherExt
         colors[i] = ((string)self[i]).AsRGBAColor();
       return colors;
     }
-
-    /// <summary>
-    /// Returns string with mod's name, id and version
-    /// </summary>
-    public static string GetFullName(this ModManager.Mod self)
-    {
-      return $"[\"{self.name}\", \"{self.id}\", \"{self.version}\"]";
-    }
-
-    /// <summary>
-    /// Checks if container has mod
-    /// </summary>
-    public static bool ContainsMod(this IEnumerable<ModManager.Mod> self, ModManager.Mod other)
-    {
-      return self.Any(mod => mod.id == other.id);
-    }
   }
 }
 
@@ -68,7 +50,7 @@ namespace gelbi_silly_lib
     public static void LogActiveMods()
     {
       foreach (ModManager.Mod mod in ModManager.ActiveMods)
-        LogInfo(mod.GetSimpleName());
+        LogInfo(mod.GetSimpleLabel());
     }
   }
 }

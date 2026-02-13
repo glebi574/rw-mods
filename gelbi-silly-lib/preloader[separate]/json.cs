@@ -340,7 +340,7 @@ public class JsonSerializer
         if (obj is int or uint or long or ulong or byte or sbyte or short or ushort)
           builder.Append(obj.ToString());
         else if (obj is float or double or decimal)
-          builder.Append(((IFormattable)obj).ToString("0.00000", CultureInfo.InvariantCulture));
+          builder.Append(((IFormattable)obj).ToString("R", CultureInfo.InvariantCulture));
         else
           SerializeString(obj.ToString());
           return;
