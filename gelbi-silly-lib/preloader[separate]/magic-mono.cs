@@ -182,14 +182,18 @@ public static class Extensions
   /// <summary>
   /// Returns method definition similar to how it'd be written in c#
   /// </summary>
-  public static string GetSimpleName(this MethodDefinition method)
+  public static string GetSimpleName(this MethodDefinition method) => new StringBuilder(128).Append(method.ReturnType.GetSimpleName()).Append(' ')
+    .Append(method.GetFullSimpleName()).Append('(').Append(method.Parameters.GetFormattedParameterTypes()).Append(')').ToString();
+
+  /// <summary>
+  /// Returns full method name with declaring type definition similar to how it'd be initially written in c#
+  /// </summary>
+  public static string GetFullSimpleName(this MethodDefinition method)
   {
-    StringBuilder sb = new(128);
-    sb.Append(method.ReturnType.GetSimpleName()).Append(' ');
+    StringBuilder sb = new(64);
     if (method.DeclaringType.Namespace.Length != 0)
       sb.Append(method.DeclaringType.Namespace).Append('.');
-    sb.Append(method.DeclaringType.GetSimpleName()).Append('.').Append(method.Name).Append('(').Append(method.Parameters.GetFormattedParameterTypes()).Append(')');
-    return sb.ToString();
+    return sb.Append(method.DeclaringType.GetSimpleName()).Append('.').Append(method.Name).ToString();
   }
 }
 

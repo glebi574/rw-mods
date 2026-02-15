@@ -3,6 +3,7 @@ using MonoMod.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib.Other
@@ -98,6 +99,21 @@ namespace gelbi_silly_lib
         baseAssemblies.Add(Path.GetFileNameWithoutExtension(path));
       foreach (string path in Directory.GetFiles("BepInEx\\core", "*.dll"))
         baseAssemblies.Add(Path.GetFileNameWithoutExtension(path));
+    }
+
+    public static double VersionToValue(string version)
+    {
+      StringBuilder sb = new(16);
+      foreach (char c in version)
+        if (c == '.' || char.IsDigit(c))
+          sb.Append(c);
+        else
+          sb.Append('.').Append(((int)c).ToString().PadLeft(3, '0'));
+      string[] values = sb.ToString().Split('.');
+      double value = 0;
+      for (int i = 0; i < values.Length; ++i)
+        value += long.Parse(values[i]) * Math.Pow(0.1, i * 3 + 3);
+      return value;
     }
   }
 }

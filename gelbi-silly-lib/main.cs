@@ -5,7 +5,6 @@ using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
@@ -41,8 +40,7 @@ public class Plugin : BaseUnityPlugin
     {
       SetImplementation(Logger.LogInfo, Logger.LogMessage, Logger.LogWarning, Logger.LogError, Logger.LogFatal, Logger.LogDebug, true);
 
-      IL.RainWorld.HandleLog += RainWorld_HandleLog;
-      On.RainWorld.Update += RainWorld_Update;
+      IssueResolver.ApplyHooks();
       On.Futile.ctor += Futile_ctor;
       On.RainWorld.OnModsInit += RainWorld_OnModsInit;
       On.OptionInterface._LoadConfigFile += OptionInterface__LoadConfigFile;
@@ -79,33 +77,6 @@ public class Plugin : BaseUnityPlugin
       c.Emit(OpCodes.Pop);
       c.Emit(OpCodes.Ldc_I4, int.MaxValue);
     }
-  }
-
-  public static Exception latestException;
-  static void RainWorld_Update(On.RainWorld.orig_Update orig, RainWorld self)
-  {
-    try
-    {
-      orig(self);
-    }
-    catch (Exception e)
-    {
-      latestException = e;
-      throw;
-    }
-  }
-
-  static void RainWorld_HandleLog(ILContext il)
-  {
-    ILCursor c = new(il);
-    if (c.TryGotoNext(i => i.OpCode == OpCodes.Ldstr))
-      c.EmitDelegate(() =>
-      {
-        if (latestException == null)
-          return;
-        File.AppendAllText("exceptionLog.txt", RuntimeDetourManager.GetAdditionalExceptionInfo(latestException));
-        GSLLog.GLog($"{GSLLog.TimeLabel()} [unhandled exception] {latestException}");
-      });
   }
 
   static void Futile_ctor(On.Futile.orig_ctor orig, Futile self)

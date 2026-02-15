@@ -212,10 +212,10 @@ public class AssemblyMap
   public static void FindChangesForHooks(Assembly asm, string baseVersion, string currentVersion,
     bool checkHarmonyPatches = false, bool checkNativeDetours = true, bool checkILHooks = true, bool checkDetours = false)
   {
-    LogInfo($"* Searching for changes of base methods of hooks for {asm.GetName().Name}:");
+    LogInfo($" * Searching for changes of base methods of hooks for {asm.GetName().Name} [{baseVersion} -> {currentVersion}]:");
     if (!managedVersions.Contains(baseVersion))
     {
-      LogInfo($"No assembly maps are defined for \"{baseVersion}\"");
+      LogInfo($" * No assembly maps are defined for \"{baseVersion}\"");
       return;
     }
     AssemblyMap baseMap = GetMap(baseVersion), currentMap = GetMap(currentVersion);
@@ -243,20 +243,20 @@ public class AssemblyMap
           LogInfo("Failed to retrieve base method");
           continue;
         }
-        LogHookComparisonResult(method, baseMap, currentMap, idetour.GetTarget() is MethodBase target ? $" hooked via {target.GetSimpleName()}" : "");
+        LogHookComparisonResult(method, baseMap, currentMap, idetour.GetTarget() is MethodBase target ? $" \\ hooked via {target.GetFullSimpleName()}" : "");
       }
     else
       LogInfo("> Assembly doesn't define any hooks");
-    if (!checkHarmonyPatches)
-      return;
-    Dictionary<MethodBase, List<MethodInfo>> patches = RuntimeDetourManager.GetHarmonyPatches(asm);
-    if (patches.Count == 0)
+    if (checkHarmonyPatches)
     {
-      LogInfo("> Assembly doesn't define any harmony patches");
-      return;
+      Dictionary<MethodBase, List<MethodInfo>> patches = RuntimeDetourManager.GetHarmonyPatches(asm);
+      if (patches.Count == 0)
+        LogInfo("> Assembly doesn't define any harmony patches");
+      else
+        foreach (KeyValuePair<MethodBase, List<MethodInfo>> patchData in patches)
+          LogHookComparisonResult(patchData.Key, baseMap, currentMap, $"hooked via:\n  {string.Join("\n  ", patchData.Value.Select(m => m.GetSimpleName()))}");
     }
-    foreach (KeyValuePair<MethodBase, List<MethodInfo>> patchData in patches)
-      LogHookComparisonResult(patchData.Key, baseMap, currentMap, $"hooked via:\n  {string.Join("\n  ", patchData.Value.Select(m => m.GetSimpleName()))}");
+    LogInfo($" * Finished searching");
   }
 
   /// <summary>

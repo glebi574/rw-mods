@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using gelbi_silly_lib.Other;
 using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
@@ -19,6 +20,10 @@ public static class ModUtils
   /// Dictionary containing folder name - mod pairs
   /// </summary>
   public static ConcurrentDictionary<string, ModManager.Mod> mods = [];
+  /// <summary>
+  /// Dictionary containing mod id - mod pairs
+  /// </summary>
+  public static ConcurrentDictionary<string, ModManager.Mod> modIDMap = [];
   /// <summary>
   /// Dictionary containing folder name - changelog pairs
   /// </summary>
@@ -43,8 +48,13 @@ public static class ModUtils
       if (!ChangelogMenu.modsUpdated && (!previousModVersions.data.TryGetValueWithType(folderName, out string version) || version != mod.version))
         ChangelogMenu.modsUpdated = true;
     }
-    return mods[folderName] = mod;
+    return modIDMap[mod.id] = mods[folderName] = mod;
   }
+
+  /// <summary>
+  /// Checks whether mod with specified id is enabled
+  /// </summary>
+  public static bool IsEnabled(string id) => modIDMap.TryGetValue(id, out ModManager.Mod mod) && mod.enabled;
 
   /// <summary>
   /// Returns assembly, that has plugin classes, from same folder if one exists. Otherwise returns <c>null</c>
@@ -66,6 +76,40 @@ public static class ModUtils
     if (mods.TryGetValue(PluginUtils.GetModFolderName(asm), out ModManager.Mod mod))
       return mod;
     return null;
+  }
+
+  /// <summary>
+  /// Returns array with file paths for files that exist at specified local path including versioned folders in order:
+  /// folder for current version, "newest" folder, mod folder itself
+  /// </summary>
+  public static string[] GetVersionedFiles(this ModManager.Mod self, string localPath)
+  {
+    List<string> paths = new(3);
+    string path;
+    if (File.Exists(path = Path.Combine(self.path, "v" + GSLPUtils.gameVersion, localPath)))
+      paths.Add(path);
+    if (File.Exists(path = Path.Combine(self.path, "newest", localPath)))
+      paths.Add(path);
+    if (File.Exists(path = Path.Combine(self.path, localPath)))
+      paths.Add(path);
+    return [.. paths];
+  }
+
+  /// <summary>
+  /// Returns array with directory paths for directories that exist at specified local path including versioned folders in order:
+  /// folder for current version, "newest" folder, mod folder itself
+  /// </summary>
+  public static string[] GetVersionedDirectories(this ModManager.Mod self, string localPath)
+  {
+    List<string> paths = new(3);
+    string path;
+    if (Directory.Exists(path = Path.Combine(self.path, "v" + GSLPUtils.gameVersion, localPath)))
+      paths.Add(path);
+    if (Directory.Exists(path = Path.Combine(self.path, "newest", localPath)))
+      paths.Add(path);
+    if (Directory.Exists(path = Path.Combine(self.path, localPath)))
+      paths.Add(path);
+    return [.. paths];
   }
 
   /// <summary>
@@ -139,5 +183,39 @@ public static class ModUtils
     }
     --sb.Length;
     return sb.Append(']').ToString();
+  }
+
+  /// <summary>
+  /// Logs all files and their defining mods in folders nested at local path. Mainly for modify and world files.
+  /// </summary>
+  public static void LogDefsForPath(string localPath, string name)
+  {
+    LogInfo($" * Logging all {name} files and their sources:");
+    Dictionary<string, Dictionary<string, HashSet<string>>> defs = new(256);
+    int longestLine = 0;
+    foreach (KeyValuePair<string, ModManager.Mod> mod in ModUtils.mods)
+      if (mod.Value.enabled)
+        foreach (string path in mod.Value.GetVersionedDirectories(localPath))
+          foreach (string directory in Directory.GetDirectories(path))
+          {
+            string dirname = Path.GetFileName(directory);
+            if (!defs.TryGetValue(dirname, out Dictionary<string, HashSet<string>> files))
+              defs[dirname] = files = [];
+            foreach (string file in Directory.GetFiles(directory, "*.txt"))
+            {
+              string filename = Path.GetFileNameWithoutExtension(file);
+              files.AddOrCreateWith(filename, mod.Value.name);
+              if (dirname.Length + filename.Length > longestLine)
+                longestLine = dirname.Length + filename.Length;
+            }
+          }
+    ++longestLine;
+    foreach (KeyValuePair<string, Dictionary<string, HashSet<string>>> directory in defs)
+    {
+      string dir = directory.Key + '\\';
+      foreach (KeyValuePair<string, HashSet<string>> file in directory.Value)
+        LogInfo((dir + file.Key).PadRight(longestLine) + " : " + string.Join(", ", file.Value));
+    }
+    LogInfo($" * Finished logging");
   }
 }

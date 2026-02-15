@@ -2,7 +2,6 @@
 using gelbi_silly_lib.Other;
 using Menu;
 using Menu.Remix.MixedUI;
-using RWCustom;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
@@ -32,8 +31,10 @@ public static class MainMenuHooks
   static void MainMenu_ctor(On.Menu.MainMenu.orig_ctor orig, MainMenu self, ProcessManager manager, bool showRegionSpecificBkg)
   {
     orig(self, manager, showRegionSpecificBkg);
+    if (Plugin.pluginInterface.hideChangelogs.Value)
+      return;
 
-    changelogButton = new(self, self.pages[0], "CHANGELOGS", "_CHANGELOGS", new(Custom.rainWorld.options.ScreenSize.x / 2f - 50f, 30f), new(110f, 30f));
+    changelogButton = new(self, self.pages[0], "CHANGELOGS", "_CHANGELOGS", new(self.mainMenuButtons[0].pos.x, 30f), new(self.mainMenuButtons[0].size.x, 30f));
     self.pages[0].subObjects.Add(changelogButton);
     self.pages[0].selectables.Add(changelogButton);
   }
@@ -51,12 +52,10 @@ public static class MainMenuHooks
   static void MainMenu_Update(On.Menu.MainMenu.orig_Update orig, MainMenu self)
   {
     orig(self);
-    if (!ChangelogMenu.modsUpdated)
+    if (!ChangelogMenu.modsUpdated || Plugin.pluginInterface.hideChangelogs.Value)
       return;
     float modifier = 1f - Mathf.Pow(Mathf.Sin(++changelogButtonColorModifier / 30f), 2);
-    HSLColor color = JollyCoop.JollyCustom.RGB2HSL(new(0.664f + modifier * 0.3f, 0.644f + modifier * 0.2f, 0.696f - modifier * 0.2f));
-    changelogButton.labelColor = color;
-    changelogButton.rectColor = color;
+    changelogButton.rectColor = changelogButton.labelColor = JollyCoop.JollyCustom.RGB2HSL(new(0.664f + modifier * 0.3f, 0.644f + modifier * 0.2f, 0.696f - modifier * 0.2f));
   }
 }
 
@@ -88,6 +87,7 @@ public class ChangelogMenu : Menu.Menu
   public DyeableRect rectBack;
   public List<ChangelogData> changelogList = [];
   public ChangelogData selectedChangelog;
+  public bool lastPauseButton = false;
   public int changelogIndex = 0, viewLevel = 0, rowLimit;
 
   public ChangelogMenu(ProcessManager manager) : base(manager, id)
@@ -102,19 +102,24 @@ public class ChangelogMenu : Menu.Menu
       if ((currentMod = ModUtils.mods[changelog.Key]).enabled && !activeChangelogs.ContainsKey(currentMod.name))
         activeChangelogs[currentMod.name] = new(currentMod, changelog.Value);
 
+    int updatedCounter = 0;
     foreach (KeyValuePair<string, ChangelogData> changelog in activeChangelogs)
       if (changelog.Value.updated)
+      {
         changelogList.Add(changelog.Value);
+        ++updatedCounter;
+      }
     foreach (KeyValuePair<string, ChangelogData> changelog in activeChangelogs)
       if (!changelog.Value.updated)
         changelogList.Add(changelog.Value);
 
-    float screenX = Custom.rainWorld.options.ScreenSize.x, screenY = Custom.rainWorld.options.ScreenSize.y;
+    float screenX = manager.rainWorld.options.ScreenSize.x, screenY = manager.rainWorld.options.ScreenSize.y;
     Page mainPage = new(this, null, "main", 0);
     pages.Add(mainPage);
     mainPage.subObjects.Add(scene = new InteractiveMenuScene(this, mainPage, MenuScene.SceneID.Landscape_SS));
     mainPage.subObjects.Add(backObject = new SimpleButton(this, mainPage, "BACK", "BACK", new(30f, screenY - 60f), new(110f, 30f)));
     mainPage.subObjects.Add(new MenuLabel(this, mainPage, "CHANGELOGS", new(screenX / 2f, screenY - 40f), new(0f, 0f), true));
+    mainPage.subObjects.Add(new MenuLabel(this, mainPage, $"({changelogList.Count} changelogs available, {updatedCounter} mods with changelogs were updated)", new(screenX / 2f, 10f), new(0f, 0f), false));
 
     rectBack = new(mainPage.Container, new(10f, 90f), new(screenX - 20f, screenY - 160f), true);
     rowLimit = (int)(rectBack.size.y / 16f);
@@ -213,6 +218,14 @@ public class ChangelogMenu : Menu.Menu
   {
     base.Update();
     rectBack.Update();
+
+    if (RWInput.CheckPauseButton(0) && !lastPauseButton && manager.dialog == null)
+    {
+      manager.RequestMainProcessSwitch(ProcessManager.ProcessID.MainMenu);
+      PlaySound(SoundID.MENU_Switch_Page_Out);
+      lastPauseButton = true;
+    }
+
     if (changelogList.Count == 0 || selectedChangelog.lineIndexes.Count <= rowLimit || Input.mouseScrollDelta.y == 0f)
       return;
     int oldLevel = viewLevel;

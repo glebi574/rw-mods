@@ -9,7 +9,7 @@ namespace gelbi_silly_lib;
 
 public static class Patcher
 {
-  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.0";
+  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.1";
 
   public static void Initialize(params Type[] modules)
   {
@@ -42,6 +42,7 @@ public static class Patcher
         typeof(PluginUtils),
       ]);
 
+      GSLLog.GLog($"Game version: {GSLPUtils.gameVersion}");
       if (GSLSettings.instance.disableEOS)
         yield return "com.playeveryware.eos.core.dll";
     }

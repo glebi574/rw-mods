@@ -177,7 +177,7 @@ public static class Extensions
   /// </summary>
   public static string GetSimpleNameWithNamespace(this Type self)
   {
-    if (self.Namespace == null)
+    if (self.Namespace == null || ReflectionUtils.baseTypeNameAtlas.ContainsKey(self))
       return self.GetSimpleName();
     return self.Namespace + '.' + self.GetSimpleName();
   }
@@ -223,7 +223,7 @@ public static class Extensions
   /// </summary>
   public static string GetFullSimpleName(this MethodBase method)
   {
-    StringBuilder sb = new(128);
+    StringBuilder sb = new(64);
     if (method.DeclaringType?.Namespace != null)
       sb.Append(method.DeclaringType.Namespace).Append('.');
     if (method.DeclaringType != null)
