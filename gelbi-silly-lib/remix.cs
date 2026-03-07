@@ -3,9 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using gelbi_silly_lib.Other;
-using static gelbi_silly_lib.LogWrapper;
 using UnityEngine;
 using Random = UnityEngine.Random;
+using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 

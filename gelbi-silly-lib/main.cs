@@ -47,12 +47,49 @@ public class Plugin : BaseUnityPlugin
       On.OptionInterface._SaveConfigFile += OptionInterface__SaveConfigFile;
       if (GSLSettings.instance.noUpdateDisable)
         IL.ModManager.RefreshModsLists += ModManager_RefreshModsLists;
+
+      //DetourUtils.newILHook<Detour>("_RefreshChain", Detour__RefreshChain);
     }
     catch (Exception e)
     {
       LogError(e);
     }
   }
+
+  // DMDs broken by IL hooks are not freed and are used as origs, which breaks following hooks
+  /*
+  public static void _Stub() { }
+
+  public static IntPtr GetNativeStart_d(MethodBase method)
+  {
+    try
+    {
+      return method.GetNativeStart();
+    }
+    catch
+    {
+      return ((Delegate)_Stub).Method.GetNativeStart();
+    }
+  }
+
+  public static void Detour__RefreshChain(ILContext il)
+  {
+    ILCursor c = new(il);
+
+    for (int i = 0; i < 2; ++i)
+      if (!c.TryGotoNext(i => i.MatchCall(typeof(DetourHelper).GetMethod("GetNativeStart", [typeof(MethodBase)]))))
+        return;
+
+    c.Emit(OpCodes.Call, ((Delegate)GetNativeStart_d).Method);
+    c.Index++;
+    Instruction newobj = c.Next;
+    c.Index--;
+    c.Emit(OpCodes.Br, newobj);
+    c.Emit(OpCodes.Ldnull);
+    c.Index++;
+    c.Emit(OpCodes.Pop);
+  }
+  */
 
   static void OptionInterface__LoadConfigFile(On.OptionInterface.orig__LoadConfigFile orig, OptionInterface self)
   {

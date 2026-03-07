@@ -1,5 +1,5 @@
 ﻿using BepInEx.Logging;
-using MonoMod.RuntimeDetour;
+using gelbi_silly_lib.MonoModUtils;
 using System;
 using System.IO;
 
@@ -79,7 +79,7 @@ public static class GSLLog
     writer = new("customLogs/gslLog.txt", false);
     GLog($"{Patcher.PLUGIN_NAME} {Patcher.PLUGIN_VERSION}");
     GLog(DateTime.Now.ToString("dd.MM.yy HH:mm:ss"));
-    new Hook(typeof(ManualLogSource).GetMethod("LogError"), ManualLogSource_LogError);
+    DetourUtils.newHook<ManualLogSource>("LogError", ManualLogSource_LogError);
   }
 
   public static string TimeLabel() => DateTime.Now.ToString("[HH:mm:ss]");
@@ -89,6 +89,13 @@ public static class GSLLog
   public static void ManualLogSource_LogError(Action<ManualLogSource, object> orig, ManualLogSource self, object data)
   {
     orig(self, data);
-    writer.WriteLine($"{TimeLabel()} [Error:\t{self.SourceName}] {data}");
+    string msg = data?.ToString() ?? "";
+    if (msg.Length > 2048)
+    {
+      int newLineIndex = msg.IndexOf('\n');
+      if (newLineIndex < 256 && msg.Substring(newLineIndex + 1, 3) == "IL_")
+        msg = msg.Substring(0, newLineIndex + 1) + "  (skipped logging long method body - it's available in LogOutput.log)";
+    }
+    writer.WriteLine($"{TimeLabel()} [Error:\t{self.SourceName}] {msg}");
   }
 }

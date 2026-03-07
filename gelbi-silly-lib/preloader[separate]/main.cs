@@ -9,7 +9,7 @@ namespace gelbi_silly_lib;
 
 public static class Patcher
 {
-  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.1";
+  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.2";
 
   public static void Initialize(params Type[] modules)
   {

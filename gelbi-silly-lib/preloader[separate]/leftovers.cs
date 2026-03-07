@@ -101,6 +101,9 @@ namespace gelbi_silly_lib
         baseAssemblies.Add(Path.GetFileNameWithoutExtension(path));
     }
 
+    /// <summary>
+    /// Returns comparable version value. Mainly meant meant for Rain World versions, but should work for other versions too.
+    /// </summary>
     public static double VersionToValue(string version)
     {
       StringBuilder sb = new(16);

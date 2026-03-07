@@ -109,6 +109,16 @@ public static class Extensions
   };
 
   /// <summary>
+  /// Returns lowest element type
+  /// </summary>
+  public static Type GetBaseElementType(this Type self)
+  {
+    if (self.IsArray || self.IsByRef || self.IsPointer)
+      return self.GetElementType().GetBaseElementType();
+    return self;
+  }
+
+  /// <summary>
   /// Returns string, containing formatted list of types, presented in array
   /// </summary>
   public static string GetFormattedTypes<T>(this T[] self) where T : Type
@@ -177,7 +187,7 @@ public static class Extensions
   /// </summary>
   public static string GetSimpleNameWithNamespace(this Type self)
   {
-    if (self.Namespace == null || ReflectionUtils.baseTypeNameAtlas.ContainsKey(self))
+    if (self.Namespace == null || ReflectionUtils.baseTypeNameAtlas.ContainsKey(self.GetBaseElementType()))
       return self.GetSimpleName();
     return self.Namespace + '.' + self.GetSimpleName();
   }

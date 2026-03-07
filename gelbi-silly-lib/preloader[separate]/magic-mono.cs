@@ -2,6 +2,7 @@
 using gelbi_silly_lib.ReflectionUtils;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
@@ -98,11 +99,72 @@ public static class Extensions
     };
   }
 
+  extension(MethodBase self)
+  {
+    /// <summary>
+    /// Returns <c>true</c> if method is hooked by IL hook
+    /// </summary>
+    public bool IsILModified
+    {
+      get
+      {
+        if (RuntimeDetourManager.hookMaps.TryGetValue(self, out List<IDetour> hooks))
+          foreach (IDetour hook in hooks)
+            if (hook is ILHook && hook.IsApplied)
+              return true;
+        return false;
+      }
+    }
+  }
+
+  /// <summary>
+  /// Emits parameter and boxes it to be accepted as <see cref="System.Object"/>
+  /// </summary>
+  public static void EmitBoxedParameter(this ILCursor c, ParameterDefinition parameter)
+  {
+    if (parameter.ParameterType.IsByReference || parameter.ParameterType.IsPointer)
+    {
+      c.Emit(OpCodes.Ldarga, parameter.Index);
+      c.Emit(OpCodes.Ldobj, parameter.ParameterType.GetElementType());
+      c.Emit(OpCodes.Box, parameter.ParameterType.GetElementType());
+      return;
+    }
+    c.Emit(OpCodes.Ldarg, parameter.Index);
+    c.Emit(OpCodes.Box, parameter.ParameterType);
+  }
+
+  /// <summary>
+  /// Emits variable and boxes it to be accepted as <see cref="System.Object"/>
+  /// </summary>
+  public static void EmitBoxedVariable(this ILCursor c, VariableDefinition variable)
+  {
+    if (variable.VariableType.IsByReference || variable.VariableType.IsPointer)
+    {
+      c.Emit(OpCodes.Ldloca, variable.Index);
+      c.Emit(OpCodes.Ldobj, variable.VariableType.GetElementType());
+      c.Emit(OpCodes.Box, variable.VariableType.GetElementType());
+      return;
+    }
+    c.Emit(OpCodes.Ldloc, variable.Index);
+    c.Emit(OpCodes.Box, variable.VariableType);
+  }
+
   /// <summary>
   /// Logs il body of the method
   /// </summary>
   public static void LogBody(this MethodDefinition self)
   {
+    LogInfo($"// Instructions: {self.GetSimpleName()}");
+    foreach (Instruction i in self.Body.Instructions)
+      LogInfo($"{i.Offset:X4}: {i.OpCode} {i.Operand}");
+  }
+
+  /// <summary>
+  /// Logs il body of the method
+  /// </summary>
+  public static void LogBody(this ILProcessor self)
+  {
+    LogInfo($"// Instructions: {self.Body.Method.GetFullSimpleName()}");
     foreach (Instruction i in self.Body.Instructions)
       LogInfo($"{i.Offset:X4}: {i.OpCode} {i.Operand}");
   }

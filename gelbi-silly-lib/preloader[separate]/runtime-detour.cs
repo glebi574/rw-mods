@@ -3,6 +3,8 @@ using gelbi_silly_lib.Other;
 using gelbi_silly_lib.ReflectionUtils;
 using HarmonyLib;
 using HarmonyLib.Public.Patching;
+using Mono.Cecil.Cil;
+using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using MonoMod.RuntimeDetour.Platforms;
 using MonoMod.Utils;
@@ -16,6 +18,68 @@ using System.Threading.Tasks;
 using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
+
+public class LinkedDMDData(DynamicMethodDefinition definition, Hook idetour)
+{
+  public bool recalculatedOffsets = false;
+  public DynamicMethodDefinition definition = definition;
+  public IDetour detour = idetour;
+}
+
+/// <summary>
+/// Method representing underlying implementation(with dynamic methods resolved to base ones) for one or multiple frames of stack trace.
+/// </summary>
+public class ResolvedTraceMethod(MethodBase method, int offset, ResolvedTraceMethod.Flags flags, string codeLocation, string additionalData = "")
+{
+  public enum Flags : ushort
+  {
+    /// <summary>
+    /// General method invocation
+    /// </summary>
+    Method = 0,
+    /// <summary>
+    /// Invocation of hook target
+    /// </summary>
+    Hook = 1,
+    /// <summary>
+    /// Invocation of inlined hook target
+    /// </summary>
+    InlinedHook = 2,
+    /// <summary>
+    /// IL of invoked method is modified via IL hook
+    /// </summary>
+    ILModified = 4,
+    /// <summary>
+    /// Invocation of dynamically generated orig based on method
+    /// </summary>
+    DynamicOrig = 8,
+    /// <summary>
+    /// Invocation of native method
+    /// </summary>
+    Native = 16,
+  }
+
+  public readonly MethodBase method = method;
+  /// <summary>
+  /// Approximate offset after which invokation or issue has occurred. Relatively correct for anything that has flags and doesn't mean anything for native methods or inlined hooks.
+  /// </summary>
+  public int offset = offset;
+  /// <summary>
+  /// Path, line number and column, if possible to retrieve.
+  /// </summary>
+  public string codeLocation = codeLocation;
+  /// <summary>
+  /// Internal name of native method if frame is resolved to it.
+  /// </summary>
+  public string additionalData = additionalData;
+  public Flags flags = flags;
+
+  public bool IsHook => (flags & Flags.Hook) != 0;
+  public bool IsInlinedHook => (flags & Flags.InlinedHook) != 0;
+  public bool IsILModified => (flags & Flags.ILModified) != 0;
+  public bool IsDynamicOrig => (flags & Flags.DynamicOrig) != 0;
+  public bool IsNative => (flags & Flags.Native) != 0;
+}
 
 /// <summary>
 /// Tracks all hooks(automatically untracks internal detours)
@@ -51,18 +115,89 @@ public static class RuntimeDetourManager
   /// </summary>
   public static ConcurrentDictionary<long, MethodBase> pinnedMethods = [];
   /// <summary>
-  /// Hooks defining DMDs
+  /// Hooks defining DMDs. Specifically, their real targets - doesn't map all DMDs
   /// </summary>
   public static Dictionary<MethodBase, IDetour> DMDOwners = [];
+  /// <summary>
+  /// Linked DMD data of dynamically generated methods for original ones or hooks
+  /// </summary>
+  public static Dictionary<MethodBase, LinkedDMDData> specificDMDMap = [];
+  public static System.Reflection.Emit.AssemblyBuilder dynamicAssembly =
+    System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(new("_DynamicAssembly"), System.Reflection.Emit.AssemblyBuilderAccess.Run);
 
   public static FieldInfo StackFrame_methodAddress = typeof(StackFrame).GetField("methodAddress", BFlags.anyDeclaredInstance);
+  public static Func<StackFrame, string> StackFrame_GetInternalMethodName = typeof(StackFrame).GetMethod("GetInternalMethodName", BFlags.anyDeclaredInstance)
+    .CreateDelegate<Func<StackFrame, string>>();
+
+  /// <summary>
+  /// Returns function pointer of the method
+  /// </summary>
+  public static long GetMethodAddress(this StackFrame self) => (long)StackFrame_methodAddress.GetValue(self);
+
+  /// <summary>
+  /// Returns string, that internally represents stack frame
+  /// </summary>
+  public static string GetInternalName(this StackFrame self) => StackFrame_GetInternalMethodName(self);
+
+  /// <summary>
+  /// Returns list of resolved methods with according data for exception's stack trace (which doesn't include wrapper DMDs).
+  /// Methods are not provided for wrapper native methods. Offsets are assigned for all methods, but not all of them make sense.
+  /// </summary>
+  public static List<ResolvedTraceMethod> GetResolvedMethodTrace(this Exception self)
+  {
+    StackTrace stackTrace = new(self, true);
+    List<ResolvedTraceMethod> methods = new(stackTrace.FrameCount);
+    MethodBase lastMethod = null;
+
+    foreach (StackFrame frame in stackTrace.GetFrames())
+    {
+      string codeLocation = frame.GetFileName();
+      if (codeLocation == null)
+        codeLocation = "";
+      else
+        codeLocation = $" in {codeLocation}:{frame.GetFileLineNumber()}:{frame.GetFileColumnNumber()}";
+      if (frame.GetMethod() is MethodBase method)
+      {
+        lastMethod = method;
+        methods.Add(new(method, frame.GetILOffset(), method.IsILModified ? ResolvedTraceMethod.Flags.ILModified : ResolvedTraceMethod.Flags.Method, codeLocation));
+        continue;
+      }
+      if (!pinnedMethods.TryGetValue(frame.GetMethodAddress(), out MethodBase pinned) || !specificDMDMap.TryGetValue(pinned, out LinkedDMDData dmdData))
+      {
+        string name = frame.GetInternalName();
+        if (name.Length > 27 && name[26] == ')')
+          methods.Add(new(null, frame.GetILOffset(), ResolvedTraceMethod.Flags.Native, codeLocation, name.Substring(28)));
+        continue;
+      }
+      ResolvedTraceMethod.Flags flags;
+      if (dmdData.detour is Hook hook)
+      {
+        if (lastMethod == hook.Target)
+          methods[methods.Count - 1].flags |= ResolvedTraceMethod.Flags.Hook;
+        else
+        {
+          flags = ResolvedTraceMethod.Flags.InlinedHook;
+          if (hook.Target.IsILModified)
+            flags |= ResolvedTraceMethod.Flags.ILModified;
+          methods.Add(new(hook.Target, frame.GetILOffset(), flags, codeLocation));
+        }
+        continue;
+      }
+      lastMethod = dmdData.definition.OriginalMethod;
+      flags = ResolvedTraceMethod.Flags.DynamicOrig;
+      if (dmdData.definition.OriginalMethod.IsILModified)
+        flags |= ResolvedTraceMethod.Flags.ILModified;
+      methods.Add(new(dmdData.definition.OriginalMethod, frame.GetILOffset(), flags, codeLocation));
+    }
+    return methods;
+  }
 
   public static void AddHook(IDetour self, MethodBase from, MethodBase to)
   {
     if (self is Detour internalDetour && internalDetour.Target.DeclaringType == null)
       return;
 
-    hookLists.AddOrCreateWith(to.DeclaringType.Assembly, self);
+    hookLists.AddOrCreateWith(to.DeclaringType?.Assembly ?? dynamicAssembly, self);
     hookMaps.AddOrCreateWith(from, self);
 
     switch (self)
@@ -135,6 +270,8 @@ public static class RuntimeDetourManager
   {
     AddHook(self, self.Method, self.Manipulator.Method);
     WrappedApply(orig, self);
+    // You wouldn't ever need IL hook's real target, but here you go:
+    // (typeof(ILHook).GetNestedType("Context", BFlags.any).GetField("Detour").GetValue(typeof(ILHook).GetProperty("_Ctx", BFlags.any).GetGetMethod(true).Invoke(self, [])) as Detour).TargetReal
   }
 
   static void Detour_Apply(Action<Detour> orig, Detour self)
@@ -177,11 +314,35 @@ public static class RuntimeDetourManager
     orig(self, from, to);
   }
 
+  static MethodInfo DMDEmitDynamicMethodGenerator__Generate(Func<DMDEmitDynamicMethodGenerator, DynamicMethodDefinition, object, MethodInfo> orig, DMDEmitDynamicMethodGenerator self, DynamicMethodDefinition dmd, object context)
+  {
+    MethodInfo generated = orig(self, dmd, context);
+    if (dmd.OriginalMethod != null || generated.Name.StartsWith("Hook"))
+      specificDMDMap[generated] = new(dmd, null);
+    return generated;
+  }
+
+  static void Hook_ctor(ILContext il)
+  {
+    ILCursor c = new(il);
+
+    if (c.TryGotoNext(i => i.MatchStfld<Hook>("TargetReal")))
+    {
+      c.Emit(OpCodes.Dup);
+      c.Emit(OpCodes.Ldarg_0);
+      c.EmitDelegate(static (MethodInfo method, Hook self) =>
+      {
+        if (specificDMDMap.TryGetValue(method, out LinkedDMDData dmdData))
+          dmdData.detour = self;
+      });
+    }
+  }
+
   static void DetourRuntimeILPlatform_Pin(Action<DetourRuntimeILPlatform, MethodBase> orig, DetourRuntimeILPlatform self, MethodBase method)
   {
     orig(self, method);
     // as a side effect anyhow optimizes retrieval of some function pointers(thus reducing instantiation time for all hooks)
-    new Task(() => pinnedMethods[(long)method.MethodHandle.GetFunctionPointer()] = method).Start();
+    pinnedMethods[(long)method.MethodHandle.GetFunctionPointer()] = method;
   }
 
   static string Exception_ToString(Func<Exception, string> orig, Exception self) => GetAdditionalExceptionInfo(self) + orig(self);
@@ -204,11 +365,13 @@ public static class RuntimeDetourManager
     }
     AddHook(initialHook, initialHook.Method, initialHook.Target);
     DetourUtils.newHook<DetourRuntimeILPlatform>("Pin", DetourRuntimeILPlatform_Pin);
+    DetourUtils.newHook<DMDEmitDynamicMethodGenerator>("_Generate", DMDEmitDynamicMethodGenerator__Generate);
     new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase), typeof(NativeDetourConfig).MakeByRefType()]), NativeDetour_ctor_mmrc);
     new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase), typeof(NativeDetourConfig)]), NativeDetour_ctor_mmc);
     new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase)]), NativeDetour_ctor_mm);
 
     new Hook(typeof(Exception).GetMethod("ToString"), Exception_ToString);
+    DetourUtils.newILHook(typeof(Hook).GetConstructor(BFlags.anyDeclaredInstance, null, [typeof(MethodBase), typeof(MethodInfo), typeof(object), typeof(HookConfig).MakeByRefType()], null), Hook_ctor);
   }
 
   /// <summary>
