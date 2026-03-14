@@ -14,7 +14,7 @@ public class PluginInterface : OptionInterface
   private UIelement[] options, versioning;
   public bool loggedHooks = false, loggedReferences = false;
 
-  public Configurable<bool> wrapHooks, noUpdateDisable, disableEOS, hideChangelogs,
+  public Configurable<bool> wrapHooks, noUpdateDisable, disableEOS, hideChangelogs, biggerErrorBox,
     checkHarmonyPatches, checkNativeDetours, checkILHooks, checkDetours;
   public Configurable<int> checksumThreshold;
   public Configurable<float> sizeThreshold;
@@ -23,6 +23,7 @@ public class PluginInterface : OptionInterface
   public PluginInterface()
   {
     hideChangelogs = config.Bind("hideChangelogs", false);
+    biggerErrorBox = config.Bind("biggerErrorBox", true);
     wrapHooks = config.Bind("wrapHooks", GSLSettings.instance.wrapHooks);
     noUpdateDisable = config.Bind("noUpdateDisable", GSLSettings.instance.noUpdateDisable);
     disableEOS = config.Bind("disableEOS", GSLSettings.instance.disableEOS);
@@ -62,6 +63,8 @@ public class PluginInterface : OptionInterface
 
       new OpCheckBox(hideChangelogs, new(10f, 320f)),
       new OpLabel(40f, 320f, "Hide changelogs button from main menu"),
+      new OpCheckBox(biggerErrorBox, new(10f, 290f)),
+      new OpLabel(40f, 290f, "Modify appearence of error dialog boxes to be bigger and text in them - left aligned"),
 
       new OpLabel(10f, 230f, "* Changes to following options will take effect on restart"),
 

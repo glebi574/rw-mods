@@ -3,6 +3,7 @@ using MonoMod.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using static gelbi_silly_lib.LogWrapper;
 
@@ -79,9 +80,13 @@ namespace gelbi_silly_lib
     /// </summary>
     public static readonly string gameVersion = null;
     /// <summary>
+    /// gsl assembly
+    /// </summary>
+    public static readonly Assembly gslpAssembly = typeof(GSLPUtils).Assembly;
+    /// <summary>
     /// Names of Rain World's assemblies
     /// </summary>
-    public static HashSet<string> baseAssemblies = ["HOOKS-Assembly-CSharp"];
+    public static HashSet<string> baseAssemblies = [];
 
     static GSLPUtils()
     {
@@ -97,8 +102,9 @@ namespace gelbi_silly_lib
 
       foreach (string path in Directory.GetFiles("RainWorld_Data\\Managed", "*.dll"))
         baseAssemblies.Add(Path.GetFileNameWithoutExtension(path));
-      foreach (string path in Directory.GetFiles("BepInEx\\core", "*.dll"))
-        baseAssemblies.Add(Path.GetFileNameWithoutExtension(path));
+      foreach (string dirPath in Directory.GetDirectories("BepInEx"))
+        foreach (string path in Directory.GetFiles(dirPath, "*.dll"))
+          baseAssemblies.Add(Path.GetFileNameWithoutExtension(path));
     }
 
     /// <summary>

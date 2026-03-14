@@ -4,7 +4,7 @@ namespace gelbi_silly_lib;
 
 public class GSLSettingsManager : BaseSavedDataHandler
 {
-  public bool wrapHooks = false, noUpdateDisable = false, disableEOS = false;
+  public bool wrapHooks = false, noUpdateDisable = false, disableEOS = false, biggerErrorBox = true;
 
   public GSLSettingsManager(string filename) : base(filename) { }
 
@@ -15,6 +15,7 @@ public class GSLSettingsManager : BaseSavedDataHandler
     data.TryUpdateValueWithType("wrapHooks", ref wrapHooks);
     data.TryUpdateValueWithType("noUpdateDisable", ref noUpdateDisable);
     data.TryUpdateValueWithType("disableEOS", ref disableEOS);
+    data.TryUpdateValueWithType("biggerErrorBox", ref biggerErrorBox);
   }
 }
 

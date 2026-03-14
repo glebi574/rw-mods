@@ -26,9 +26,12 @@ public static class AssemblyUtils
   /// </summary>
   public static Dictionary<string, List<Action<AssemblyDefinition>>> assemblyPatches = [];
 
+  public static Dictionary<string, string> locations = [];
+
   static AssemblyUtils()
   {
     new Hook(typeof(Assembly).GetMethod("LoadFile", BFlags.anyDeclaredStatic, null, [typeof(string)], null), Assembly_LoadFile);
+    new Hook(typeof(Assembly).GetProperty("Location").GetGetMethod(), Assembly_getLocation);
   }
 
   /// <summary>
@@ -55,7 +58,16 @@ public static class AssemblyUtils
     foreach (Action<AssemblyDefinition> patch in universalPatches)
       patch(asm);
 
+    locations[Path.GetFileNameWithoutExtension(path)] = path;
     AssemblyPatcher.Load(asm, filename);
     return AppDomain.CurrentDomain.GetAssemblies().Last();
+  }
+
+  static string Assembly_getLocation(Func<Assembly, string> orig, Assembly self)
+  {
+    string location = orig(self);
+    if (string.IsNullOrWhiteSpace(location))
+      return locations[self.GetName().Name];
+    return location;
   }
 }

@@ -193,17 +193,17 @@ public static class ModUtils
     LogInfo($" * Logging all {name} files and their sources:");
     Dictionary<string, Dictionary<string, HashSet<string>>> defs = new(256);
     int longestLine = 0;
-    foreach (KeyValuePair<string, ModManager.Mod> mod in ModUtils.mods)
+    foreach (KeyValuePair<string, ModManager.Mod> mod in mods)
       if (mod.Value.enabled)
         foreach (string path in mod.Value.GetVersionedDirectories(localPath))
           foreach (string directory in Directory.GetDirectories(path))
           {
-            string dirname = Path.GetFileName(directory);
+            string dirname = Path.GetFileName(directory).ToLowerInvariant();
             if (!defs.TryGetValue(dirname, out Dictionary<string, HashSet<string>> files))
               defs[dirname] = files = [];
             foreach (string file in Directory.GetFiles(directory, "*.txt"))
             {
-              string filename = Path.GetFileNameWithoutExtension(file);
+              string filename = Path.GetFileNameWithoutExtension(file).ToLowerInvariant();
               files.AddOrCreateWith(filename, mod.Value.name);
               if (dirname.Length + filename.Length > longestLine)
                 longestLine = dirname.Length + filename.Length;

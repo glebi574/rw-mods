@@ -244,18 +244,53 @@ public static class Extensions
   /// <summary>
   /// Returns method definition similar to how it'd be written in c#
   /// </summary>
-  public static string GetSimpleName(this MethodDefinition method) => new StringBuilder(128).Append(method.ReturnType.GetSimpleName()).Append(' ')
+  public static string GetSimpleName(this MethodReference method) => new StringBuilder(128).Append(method.ReturnType.GetSimpleName()).Append(' ')
     .Append(method.GetFullSimpleName()).Append('(').Append(method.Parameters.GetFormattedParameterTypes()).Append(')').ToString();
+
+  /// <summary>
+  /// Returns field definition similar to how it'd be written in c#
+  /// </summary>
+  public static string GetSimpleName(this FieldReference field)
+  {
+    return $"{field.FieldType.GetSimpleName()} {field.DeclaringType.GetSimpleName()}.{field.Name}";
+  }
 
   /// <summary>
   /// Returns full method name with declaring type definition similar to how it'd be initially written in c#
   /// </summary>
-  public static string GetFullSimpleName(this MethodDefinition method)
+  public static string GetFullSimpleName(this MethodReference method)
   {
     StringBuilder sb = new(64);
     if (method.DeclaringType.Namespace.Length != 0)
       sb.Append(method.DeclaringType.Namespace).Append('.');
     return sb.Append(method.DeclaringType.GetSimpleName()).Append('.').Append(method.Name).ToString();
+  }
+
+  /// <summary>
+  /// Returns string with information about instruction using simple conversions
+  /// </summary>
+  public static string GetSimpleLabel(this Instruction i)
+  {
+    StringBuilder sb = new(64);
+    sb.Append("IL_").Append(i.Offset.ToString("X4")).Append(": ").Append(i.OpCode);
+    switch (i.Operand)
+    {
+      case null:
+        break;
+      case TypeReference type:
+        sb.Append(" ").Append(type.GetSimpleName());
+        break;
+      case MethodReference method:
+        sb.Append(" ").Append(method.GetSimpleName());
+        break;
+      case FieldReference field:
+        sb.Append(" ").Append(field.GetSimpleName());
+        break;
+      default:
+        sb.Append(" ").Append(i.Operand.ToString());
+        break;
+    }
+    return sb.ToString();
   }
 }
 

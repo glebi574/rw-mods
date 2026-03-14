@@ -9,13 +9,13 @@ namespace gelbi_silly_lib;
 
 public static class Patcher
 {
-  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.2";
+  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.3";
 
   public static void Initialize(params Type[] modules)
   {
     Stopwatch start = Stopwatch.StartNew(), moduleStart = Stopwatch.StartNew();
     GSLLog.GLog();
-    Console.WriteLine("gelbi-silly-lib-preloader ♥");
+    Console.WriteLine($"gelbi-silly-lib-preloader {PLUGIN_VERSION} ♥");
     foreach (Type module in modules)
     {
       moduleStart.Restart();
@@ -34,6 +34,7 @@ public static class Patcher
         typeof(SavedDataManager),
         typeof(GSLSettings),
         typeof(RuntimeDetourManager),
+        typeof(Debugging.DebuggerUtils),
         typeof(WriterThread),
         typeof(GSLLog),
         typeof(GSLPUtils),

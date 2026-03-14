@@ -1,8 +1,11 @@
 ﻿using BepInEx;
+using gelbi_silly_lib.Debugging;
 using gelbi_silly_lib.MonoModUtils;
 using gelbi_silly_lib.SavedDataManagerExtensions;
+using Menu;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
+using RWCustom;
 using System;
 using System.Collections.Generic;
 using static gelbi_silly_lib.LogWrapper;
@@ -17,6 +20,7 @@ public class GSLOIBinder(GSLSettingsManager manager, PluginInterface oi) : BaseO
     oi.wrapHooks.Value = manager.wrapHooks;
     oi.noUpdateDisable.Value = manager.noUpdateDisable;
     oi.disableEOS.Value = manager.disableEOS;
+    oi.biggerErrorBox.Value = manager.biggerErrorBox;
   }
 
   public override void RemixSave()
@@ -24,6 +28,7 @@ public class GSLOIBinder(GSLSettingsManager manager, PluginInterface oi) : BaseO
     Data["wrapHooks"] = oi.wrapHooks.Value;
     Data["noUpdateDisable"] = oi.noUpdateDisable.Value;
     Data["disableEOS"] = oi.disableEOS.Value;
+    Data["biggerErrorBox"] = oi.biggerErrorBox.Value;
     Write();
   }
 }
@@ -45,6 +50,7 @@ public class Plugin : BaseUnityPlugin
       On.RainWorld.OnModsInit += RainWorld_OnModsInit;
       On.OptionInterface._LoadConfigFile += OptionInterface__LoadConfigFile;
       On.OptionInterface._SaveConfigFile += OptionInterface__SaveConfigFile;
+      On.Menu.DialogBoxNotify.ctor += DialogBoxNotify_ctor;
       if (GSLSettings.instance.noUpdateDisable)
         IL.ModManager.RefreshModsLists += ModManager_RefreshModsLists;
 
@@ -114,6 +120,29 @@ public class Plugin : BaseUnityPlugin
       c.Emit(OpCodes.Pop);
       c.Emit(OpCodes.Ldc_I4, int.MaxValue);
     }
+  }
+
+  static void DialogBoxNotify_ctor(On.Menu.DialogBoxNotify.orig_ctor orig, DialogBoxNotify self, Menu.Menu menu, MenuObject owner, string text, string signalText, UnityEngine.Vector2 pos, UnityEngine.Vector2 size, bool forceWrapping)
+  {
+    if (signalText != "AFTERERROR")
+      goto _e;
+    LogError("DialogBoxNotify with error message was instantiated: " + text);
+    if (!pluginInterface.biggerErrorBox.Value)
+      goto _e;
+    pos.x = 40f;
+    pos.y = 40f;
+    size.x = Custom.rainWorld.options.ScreenSize.x - 80f;
+    size.y = Custom.rainWorld.options.ScreenSize.y - 80f;
+    orig(self, menu, owner, text, signalText, pos, size, forceWrapping);
+    self.descriptionLabel.label.alignment = FLabelAlignment.Left;
+    self.descriptionLabel.label._anchorY = 1f;
+    self.descriptionLabel.size = new();
+    self.descriptionLabel.pos.x = 60f;
+    self.descriptionLabel.pos.y = Custom.rainWorld.options.ScreenSize.y - 60f;
+    return;
+  _e:
+    orig(self, menu, owner, text, signalText, pos, size, forceWrapping);
+    return;
   }
 
   static void Futile_ctor(On.Futile.orig_ctor orig, Futile self)
