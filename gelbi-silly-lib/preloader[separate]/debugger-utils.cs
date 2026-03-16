@@ -104,10 +104,18 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
   {
     ILProcessor ilp = il.IL;
     MethodReference methodRef = il.Module.ImportReference(m_SetFinalInstruction);
+    bool skip = false;
     int index = 0;
     // doesn't process branches, but they wouldn't matter
     foreach (Instruction i in il.Instrs.ToArray())
     {
+      if (skip)
+      {
+        skip = i.OpCode.OpCodeType == OpCodeType.Prefix;
+        ++index;
+        continue;
+      }
+      skip = i.OpCode.OpCodeType == OpCodeType.Prefix;
       ilp.InsertBefore(i, ilp.Create(OpCodes.Ldc_I4, id));
       ilp.InsertBefore(i, ilp.Create(OpCodes.Ldc_I4, targetMethodIndex));
       ilp.InsertBefore(i, ilp.Create(OpCodes.Ldc_I4, index++));
@@ -152,22 +160,31 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
     }
     else if ((!objectType.IsValueType || !objectType.IsPrimitive && !objectType.IsEnum) && obj is not Delegate)
     {
-      sb.AppendLine(" : {");
+      sb.Append(" : {");
+      StringBuilder local = new(64);
       foreach (FieldInfo field in objectType.GetFields(BFlags.anyInstance))
         if (field.FieldType.IsArray)
         {
-          sb.Append("  ").Append(field.Name).Append(": ");
+          local.Append("  ").Append(field.Name).Append(": ");
           if (field.GetValue(obj) is Array array)
             AppendArray(array);
           else
-            sb.Append("null");
-          sb.AppendLine();
+            local.Append("null");
+          local.AppendLine();
         }
         else if (field.FieldType.IsPrimitive || field.FieldType.IsEnum)
-          sb.Append("  ").Append(field.Name).Append(": ").AppendLine(field.GetValue(obj)?.ToString() ?? "null");
+          local.Append("  ").Append(field.Name).Append(": ").AppendLine(field.GetValue(obj)?.ToString() ?? "null");
         else if (field.GetValue(obj) == null)
-          sb.Append("  ").Append(field.Name).Append(": ").AppendLine("null");
-      sb.Append('}');
+          local.Append("  ").Append(field.Name).Append(": ").AppendLine("null");
+      if (local.Length < 64)
+      {
+        local.Replace(Environment.NewLine + ' ', ",");
+        if (local.Length > 3)
+          local.Remove(0, 2).Length -= Environment.NewLine.Length;
+      }
+      else
+        sb.AppendLine();
+      sb.Append(local).Append('}');
     }
     return sb.ToString();
   }
@@ -237,7 +254,7 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
         allowedToResolve = false;
         dismissCounter = 0;
 
-        LogError($"Tracked issue #{id} based on \"{stack[0].method.GetSimpleName()}\" repeated twice. Attempting to retrieve invokation trace and capture state.");
+        LogError($"Tracked issue #{id} based on \"{stack[0].method.GetSimpleName()}\" repeated twice. Attempting to retrieve invocation trace and capture state.");
         state = DebuggingState.Capture;
         finalInstructions = new int[stack.Count];
         capturedArguments = new Dictionary<string, string>[finalInstructions.Length];
@@ -337,13 +354,26 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
   /// </summary>
   public static void Update(Exception e)
   {
-    List<ResolvedTraceMethod> resolvedStack = e.GetResolvedMethodTrace();
+    List<ResolvedTraceMethod> resolvedStack;
+    if (e.InnerException == null)
+      resolvedStack = e.GetResolvedMethodTrace();
+    else
+    {
+      resolvedStack = e.InnerException.GetResolvedMethodTrace();
+      foreach (ResolvedTraceMethod method in e.GetResolvedMethodTrace())
+        resolvedStack.Add(method);
+    }
     for (int i = resolvedStack.Count - 1; i >= 0; --i)
-      if (resolvedStack[i].method == null
-        // remove duplicates
-        || resolvedStack.IndexOf(resolvedStack[i]) != i
-        || resolvedStack[i].method.DeclaringType == typeof(TrackedIssue) || resolvedStack[i].method.DeclaringType?.Name == "IssueResolver")
+      if (resolvedStack[i].method == null || resolvedStack[i].method.DeclaringType == typeof(TrackedIssue) || resolvedStack[i].method.DeclaringType?.Name == "IssueResolver")
         resolvedStack.RemoveAt(i);
+      else
+        // remove duplicates
+        for (int j = 0; j < i; ++j)
+          if (resolvedStack[j].method == resolvedStack[i].method)
+          {
+            resolvedStack.RemoveAt(i);
+            break;
+          }
     if (resolvedStack.Count == 0 || resolvedIssues.Contains(resolvedStack[0].method))
       return;
     if (issues.TryGetValue(resolvedStack[0].method, out TrackedIssue issue))
