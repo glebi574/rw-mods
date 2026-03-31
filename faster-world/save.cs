@@ -4,6 +4,7 @@ using MoreSlugcats;
 using RWCustom;
 using System.Text;
 using System.Text.RegularExpressions;
+using Watcher;
 using static faster_world.LogWrapper;
 
 namespace faster_world;
@@ -29,6 +30,8 @@ public static class M_Save
           saveAsIfPlayerDied = true;
         }
     Custom.Log([$"save deathPersistent data {self.currentSaveState.deathPersistentSaveData.karma} sub karma: {saveAsIfPlayerDied} (quit:{saveAsIfPlayerQuit})"]);
+    if (saveAsIfPlayerDied || saveAsIfPlayerQuit)
+      WarpPoint.ScrubNonDeathPersistentData(self.currentSaveState);
     string saveData = self.currentSaveState.deathPersistentSaveData.SaveToString(saveAsIfPlayerDied, saveAsIfPlayerQuit);
     if (saveData == "")
     {

@@ -25,7 +25,7 @@ public static class M_Math
     if (self.room.terrain == null)
       return false;
     Vector2 vector = new(bodyChunk.pos.x + relativeX * 20f, bodyChunk.pos.y + relativeY * 20f);
-    return self.room.terrain.TrySnapToTerrain(vector, bodyChunk.rad, out Vector2 vector2, out _, false) && Vector2.Distance(vector2, vector) > bodyChunk.rad;
+    return self.room.terrain.TrySnapToTerrain(vector, bodyChunk.rad, out Vector2 vector2, out _) && Vector2.Distance(vector2, vector) > bodyChunk.rad;
   }
 
   public static bool BodyPart_OnOtherSideOfTerrain(BodyPart self, Vector2 conPos, float minAffectRadius)
@@ -67,7 +67,7 @@ public static class M_Math
     if (room.terrain != null && self.owner.owner.Buried)
       return;
     self.terrainContact = false;
-    if (room.terrain != null && room.terrain.TrySnapToTerrain(self.pos, self.rad, out Vector2 vector, out _))
+    if (room.terrain != null && room.terrain.TrySnapToTerrain(self.pos, self.rad, out Vector2 vector, out _, new Vector2?(self.lastPos), false))
     {
       self.terrainContact = true;
       self.pos = vector;

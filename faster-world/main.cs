@@ -25,7 +25,7 @@ public class Plugin : BaseUnityPlugin
 {
   public const string PLUGIN_GUID = "0gelbi.faster-world";
   public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.8";
+  public const string PLUGIN_VERSION = "1.0.9";
 
   public static bool isInit = false, gslEnabled = false;
   public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
@@ -47,7 +47,7 @@ public class Plugin : BaseUnityPlugin
 
   public static void VersionSpecificInit()
   {
-    VersionSpecific.Update("1.11.6", VersionSpecific.MismatchAction.Warn);
+    VersionSpecific.Update("1.11.7", VersionSpecific.MismatchAction.Warn);
     ReplaceD = (from, to) => VersionSpecific.newNativeDetour(from, to);
     ReplaceC = (type, args, target) => VersionSpecific.newNativeDetour(type.GetConstructor(flags, null, args, null), target.Method);
     ReplaceF = (type, methodName, target) => VersionSpecific.newNativeDetour(type.GetMethod(methodName, flags), target.Method);
@@ -55,7 +55,7 @@ public class Plugin : BaseUnityPlugin
 
   public static void SetVersionFlagImportant()
   {
-    VersionSpecific.Update("1.11.6", VersionSpecific.MismatchAction.Skip);
+    VersionSpecific.Update("1.11.7", VersionSpecific.MismatchAction.Skip);
   }
 
   public void Futile_ctor(On.Futile.orig_ctor orig, Futile self)
@@ -83,7 +83,7 @@ public class Plugin : BaseUnityPlugin
         ReplaceF = (type, methodName, target) => new NativeDetour(type.GetMethod(methodName, flags), target.Method);
       }
 
-      #region 1.0.8
+      #region 1.0.9
 
       IL.ModManager.RefreshModsLists += M_ModManager.ModManager_RefreshModsLists;
 
@@ -107,7 +107,6 @@ public class Plugin : BaseUnityPlugin
 
       ReplaceF(typeof(Room), "RayTraceTilesForTerrain", M_World.Room_RayTraceTilesForTerrain);
       ReplaceF(typeof(AImap), "ConnectionCostForCreature", M_World.AImap_ConnectionCostForCreature);
-      ReplaceF(typeof(AIdataPreprocessor.AccessibilityDijkstraMapper), "Update", M_World.AccessibilityDijkstraMapper_Update);
 
       if (gslEnabled)
         SetVersionFlagImportant();
