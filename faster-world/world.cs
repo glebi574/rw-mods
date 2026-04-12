@@ -2,9 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using static faster_world.LogWrapper;
 
 namespace faster_world;
+using static CommonWrapper;
 
 public static class M_World
 {

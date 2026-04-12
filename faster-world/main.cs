@@ -1,31 +1,43 @@
 ﻿//#define _DEV
 
 using BepInEx;
+using gelbi_silly_lib;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Reflection;
-using MonoMod.Cil;
-using gelbi_silly_lib;
 
-using static faster_world.LogWrapper;
+namespace faster_world;
+using static CommonWrapper;
 
 #if _DEV
 using profiler;
 #endif
 
-namespace faster_world;
-
-public static class LogWrapper
+public static class CommonWrapper
 {
   public static BepInEx.Logging.ManualLogSource Log;
+
+  public static string SubstringUntil(this string self, char c)
+  {
+    int i = self.IndexOf(c);
+    if (i == -1)
+      return self;
+    return self.Substring(0, i);
+  }
+
+  public static string SubstringAfter(this string self, char c)
+  {
+    int i = self.IndexOf(c);
+    if (i == self.Length - 1)
+      return "";
+    return self.Substring(i + 1);
+  }
 }
 
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "0gelbi.faster-world";
-  public const string PLUGIN_NAME = "Faster World";
-  public const string PLUGIN_VERSION = "1.0.9";
+  public const string PLUGIN_GUID = "0gelbi.faster-world", PLUGIN_NAME = "Faster World", PLUGIN_VERSION = "1.0.10", targetVersion = "1.11.7b";
 
   public static bool isInit = false, gslEnabled = false;
   public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
@@ -37,25 +49,25 @@ public class Plugin : BaseUnityPlugin
     On.Futile.ctor += Futile_ctor;
   }
 
-  public static void UltimateMethodOptimizer(ILContext _) { /* it just works */ }
-
-  public static void Optimize<T>(string methodName) => new ILHook(typeof(T).GetMethod(methodName, flags), UltimateMethodOptimizer);
+  public static void Optimize<T>(string methodName) => typeof(T).GetMethod(methodName, flags).MethodHandle.GetFunctionPointer(); // so that's why it works
 
   public static Action<Delegate, Delegate> ReplaceD;
   public static Action<Type, Type[], Delegate> ReplaceC;
   public static Action<Type, string, Delegate> ReplaceF;
+  public static Action<Type, string, Type[], Delegate> ReplaceFL;
 
   public static void VersionSpecificInit()
   {
-    VersionSpecific.Update("1.11.7", VersionSpecific.MismatchAction.Warn);
+    VersionSpecific.Update(targetVersion, VersionSpecific.MismatchAction.Warn);
     ReplaceD = (from, to) => VersionSpecific.newNativeDetour(from, to);
     ReplaceC = (type, args, target) => VersionSpecific.newNativeDetour(type.GetConstructor(flags, null, args, null), target.Method);
     ReplaceF = (type, methodName, target) => VersionSpecific.newNativeDetour(type.GetMethod(methodName, flags), target.Method);
+    ReplaceFL = (type, methodName, parameterTypes, target) => VersionSpecific.newNativeDetour(type.GetMethod(methodName, flags, null, parameterTypes, null), target.Method);
   }
 
   public static void SetVersionFlagImportant()
   {
-    VersionSpecific.Update("1.11.7", VersionSpecific.MismatchAction.Skip);
+    VersionSpecific.Update(targetVersion, VersionSpecific.MismatchAction.Skip);
   }
 
   public void Futile_ctor(On.Futile.orig_ctor orig, Futile self)
@@ -81,9 +93,13 @@ public class Plugin : BaseUnityPlugin
         ReplaceD = (from, to) => new NativeDetour(from, to);
         ReplaceC = (type, args, target) => new NativeDetour(type.GetConstructor(flags, null, args, null), target.Method);
         ReplaceF = (type, methodName, target) => new NativeDetour(type.GetMethod(methodName, flags), target.Method);
+        ReplaceFL = (type, methodName, parameterTypes, target) => new NativeDetour(type.GetMethod(methodName, flags, null, parameterTypes, null), target.Method);
       }
 
-      #region 1.0.9
+      #region 1.0.10
+
+      Optimize<Room>("Loaded");
+      Optimize<PlacedObject>("GenerateEmptyData");
 
       IL.ModManager.RefreshModsLists += M_ModManager.ModManager_RefreshModsLists;
 
@@ -108,22 +124,30 @@ public class Plugin : BaseUnityPlugin
       ReplaceF(typeof(Room), "RayTraceTilesForTerrain", M_World.Room_RayTraceTilesForTerrain);
       ReplaceF(typeof(AImap), "ConnectionCostForCreature", M_World.AImap_ConnectionCostForCreature);
 
+      ReplaceF(typeof(WorldLoader), "LoadAbstractRoom", M_World2.WorldLoader_LoadAbstractRoom);
+      ReplaceF(typeof(WorldLoader), "FindRoomFile", M_World2.WorldLodaer_FindRoomFile);
+      ReplaceF(typeof(RoomPreprocessor), "StringToConnMap", M_World2.RoomPreprocessor_StringToConnMap);
+      ReplaceF(typeof(RoomSettings), "FindParent", M_World2.RoomSettings_FindParent);
+      On.OverWorld.LoadWorld_string_Name_Timeline_bool += M_World2.OverWorld_LoadWorld;
+      On.WorldLoader.ReturnWorld += M_World2.WorldLoader_ReturnWorld;
+      On.StaticWorld.InitStaticWorld += M_World2.StaticWorld_InitStaticWorld;
+      IL.RoomSettings.Load_Timeline += M_World2.RoomSettings_Load_Timeline;
+
       if (gslEnabled)
         SetVersionFlagImportant();
 
       ReplaceF(typeof(PlayerProgression), "SaveDeathPersistentDataOfCurrentState", M_Save.PlayerProgression_SaveDeathPersistentDataOfCurrentState);
 
-      Optimize<Room>("Loaded");
-
       #endregion
 
 #if _DEV
       //Profiler.PatchMethods([
-      //  typeof(PlayerProgression).GetMethod("SaveDeathPersistentDataOfCurrentState"),
+      //  typeof(OverWorld).GetMethod("LoadFirstWorld", flags),
       //]);
 
       Profiler.PatchMethods([
-        M_Save.PlayerProgression_SaveDeathPersistentDataOfCurrentState,
+        M_World2.OverWorld_LoadWorld,
+        M_World2.WorldLoader_ReturnWorld,
       ]);
 #endif
     }

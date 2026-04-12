@@ -5,9 +5,9 @@ using RWCustom;
 using System.Text;
 using System.Text.RegularExpressions;
 using Watcher;
-using static faster_world.LogWrapper;
 
 namespace faster_world;
+using static CommonWrapper;
 
 public static class M_Save
 {

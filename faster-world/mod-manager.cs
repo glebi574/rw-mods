@@ -11,9 +11,9 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using static faster_world.LogWrapper;
 
 namespace faster_world;
+using static CommonWrapper;
 
 public static class M_ModManager
 {
@@ -27,7 +27,7 @@ public static class M_ModManager
       i => i.MatchCall(typeof(Custom).GetMethod("RootFolderDirectory"))))
     {
       c.Emit(OpCodes.Ldarg_0);
-      c.EmitDelegate(RefreshModsLists);
+      c.Emit(OpCodes.Call, ((Delegate)RefreshModsLists).Method);
       c.Emit(OpCodes.Br, il.Instrs.First(i => i.OpCode == OpCodes.Call && i.Operand is MethodReference m && m.Name == "_RefreshOIs"));
     }
   }
@@ -102,66 +102,46 @@ public static class M_ModManager
       requirementsNames = [],
       tags = [],
       priorities = [],
-      modifiesRegions = false,
       workshopId = 0UL,
       workshopMod = false,
-      hasDLL = false,
       loadOrder = 0,
       enabled = false
     };
     if (File.Exists(modInfoPath))
     {
-      Dictionary<string, object> modInfoData = File.ReadAllText(modInfoPath).dictionaryFromJson();
-      if (modInfoData == null)
+      if (File.ReadAllText(modInfoPath).dictionaryFromJson() is not Dictionary<string, object> modInfoData)
         return null;
-      foreach (KeyValuePair<string, object> kvp in modInfoData)
-        switch (kvp.Key)
-        {
-          case "id":
-            mod.id = kvp.Value.ToString();
-            break;
-          case "name":
-            mod.name = kvp.Value.ToString();
-            break;
-          case "version":
-            mod.version = kvp.Value.ToString();
-            break;
-          case "hide_version":
-            mod.hideVersion = (bool)kvp.Value;
-            break;
-          case "target_game_version":
-            mod.targetGameVersion = kvp.Value.ToString();
-            break;
-          case "authors":
-            mod.authors = kvp.Value.ToString();
-            break;
-          case "description":
-            mod.description = kvp.Value.ToString();
-            break;
-          case "youtube_trailer_id":
-            mod.trailerID = kvp.Value.ToString();
-            break;
-          case "requirements":
-            AssignStringList(ref mod.requirements, kvp.Value);
-            break;
-          case "requirements_names":
-            AssignStringList(ref mod.requirementsNames, kvp.Value);
-            break;
-          case "tags":
-            AssignStringList(ref mod.tags, kvp.Value);
-            break;
-          case "priorities":
-            AssignStringList(ref mod.priorities, kvp.Value);
-            break;
-          case "checksum_override_version":
-            mod.checksumOverrideVersion = (bool)kvp.Value;
-            break;
-        }
+      void TryUpdateString(string key, ref string field)
+      {
+        if (modInfoData.TryGetValue(key, out object value))
+          field = value.ToString();
+      }
+      void TryUpdateBool(string key, ref bool field)
+      {
+        if (modInfoData.TryGetValue(key, out object value))
+          field = (bool)value;
+      }
+      void TryUpdateList(string key, ref string[] field)
+      {
+        if (modInfoData.TryGetValue(key, out object value))
+          AssignStringList(ref field, value);
+      }
+      TryUpdateString("id", ref mod.id);
+      TryUpdateString("name", ref mod.name);
+      TryUpdateString("version", ref mod.version);
+      TryUpdateString("target_game_version", ref mod.targetGameVersion);
+      TryUpdateString("authors", ref mod.authors);
+      TryUpdateString("description", ref mod.description);
+      TryUpdateString("youtube_trailer_id", ref mod.trailerID);
+      TryUpdateBool("hide_version", ref mod.hideVersion);
+      TryUpdateBool("checksum_override_version", ref mod.checksumOverrideVersion);
+      TryUpdateList("requirements", ref mod.requirements);
+      TryUpdateList("requirements_names", ref mod.requirementsNames);
+      TryUpdateList("tags", ref mod.tags);
+      TryUpdateList("priorities", ref mod.priorities);
     }
-    if (Directory.Exists((folderPath + "world").ToLowerInvariant()))
-      mod.modifiesRegions = true;
-    if (ModManager.ModFolderHasDLLContent(modpath))
-      mod.hasDLL = true;
+    mod.modifiesRegions = Directory.Exists(folderPath + "world");
+    mod.hasDLL = ModManager.ModFolderHasDLLContent(modpath);
     if (Directory.Exists(folderLatest))
       if (Directory.GetFiles(folderLatest).Length != 0)
         mod.hasTargetedVersionFolder = true;
@@ -176,7 +156,6 @@ public static class M_ModManager
           }
         }
     if (!mod.hasTargetedVersionFolder && Directory.Exists(folderNewest))
-    {
       if (Directory.GetFiles(folderNewest).Length != 0)
         mod.hasNewestFolder = true;
       else
@@ -189,7 +168,6 @@ public static class M_ModManager
             break;
           }
         }
-    }
     string checksum = mod.checksumOverrideVersion || !rainWorld.options.enabledMods.Contains(mod.id)
       ? mod.version
       : ModManager.ComputeModChecksum(modpath);
