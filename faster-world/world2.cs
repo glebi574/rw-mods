@@ -201,6 +201,12 @@ public static class M_World2
     self.InheritAmbientSounds();
   }
 
+  public static void RoomSettings_Save_string_bool(On.RoomSettings.orig_Save_string_bool orig, RoomSettings self, string path, bool saveAsTemplate)
+  {
+    orig(self, path, saveAsTemplate);
+    cachedRooms[path.ToLowerInvariant()] = File.ReadAllLines(path);
+  }
+
   public static void RoomSettings_Load_Timeline(ILContext il)
   {
     ILCursor c = new(il);

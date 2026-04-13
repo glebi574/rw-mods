@@ -37,7 +37,7 @@ public static class CommonWrapper
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "0gelbi.faster-world", PLUGIN_NAME = "Faster World", PLUGIN_VERSION = "1.0.10", targetVersion = "1.11.7b";
+  public const string PLUGIN_GUID = "0gelbi.faster-world", PLUGIN_NAME = "Faster World", PLUGIN_VERSION = "1.0.11", targetVersion = "1.11.7b";
 
   public static bool isInit = false, gslEnabled = false;
   public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
@@ -96,7 +96,7 @@ public class Plugin : BaseUnityPlugin
         ReplaceFL = (type, methodName, parameterTypes, target) => new NativeDetour(type.GetMethod(methodName, flags, null, parameterTypes, null), target.Method);
       }
 
-      #region 1.0.10
+      #region 1.0.11
 
       Optimize<Room>("Loaded");
       Optimize<PlacedObject>("GenerateEmptyData");
@@ -128,9 +128,10 @@ public class Plugin : BaseUnityPlugin
       ReplaceF(typeof(WorldLoader), "FindRoomFile", M_World2.WorldLodaer_FindRoomFile);
       ReplaceF(typeof(RoomPreprocessor), "StringToConnMap", M_World2.RoomPreprocessor_StringToConnMap);
       ReplaceF(typeof(RoomSettings), "FindParent", M_World2.RoomSettings_FindParent);
+      On.StaticWorld.InitStaticWorld += M_World2.StaticWorld_InitStaticWorld;
       On.OverWorld.LoadWorld_string_Name_Timeline_bool += M_World2.OverWorld_LoadWorld;
       On.WorldLoader.ReturnWorld += M_World2.WorldLoader_ReturnWorld;
-      On.StaticWorld.InitStaticWorld += M_World2.StaticWorld_InitStaticWorld;
+      On.RoomSettings.Save_string_bool += M_World2.RoomSettings_Save_string_bool;
       IL.RoomSettings.Load_Timeline += M_World2.RoomSettings_Load_Timeline;
 
       if (gslEnabled)
