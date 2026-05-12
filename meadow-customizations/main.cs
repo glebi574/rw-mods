@@ -5,45 +5,71 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
-using Random = System.Random;
 
 namespace meadow_customizations;
+using static LogWrapper;
+
+public static class LogWrapper
+{
+  public static BepInEx.Logging.ManualLogSource Log;
+}
 
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
-
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "gelbi.meadow_customizations";
-  public const string PLUGIN_NAME = "Meadow Customizations";
-  public const string PLUGIN_VERSION = "1.0.4";
+  public const string PLUGIN_GUID = "gelbi.meadow_customizations", PLUGIN_NAME = "Meadow Customizations", PLUGIN_VERSION = "1.0.5";
 
-  public PluginInterface pluginInterface;
-
-  public static Random rand = new();
-  public bool needNameUpdate = true, needBodyColorUpdate = true, needEyeColorUpdate = true, isArenaMode = false, wasDeadThisSession = false;
+  public bool isInit = false, needNameUpdate = true, needBodyColorUpdate = true, needEyeColorUpdate = true, isArenaMode = false, wasDeadThisSession = false;
   public int playerIndex = -1, deaths = 0, eyeColorCounter = 0, eyeIterator = 0, delayedDeathCounter = 0, rainbowColorStep = 1;
   public float rainbowColorR = 1f, rainbowColorG = 0f, rainbowColorB = 0f;
   public double velocity = 0f;
   public string originalName;
   public OnlinePlayer me = null;
   public List<Player> killedPlayers = [];
-
-  public delegate OnlineEntity.EntityData.EntityDataState
-    _dSlugcatCustomization_MakeState(SlugcatCustomization self, OnlineEntity onlineEntity, OnlineResource inResouse);
+  public PluginInterface pluginInterface;
 
   public void OnEnable()
   {
-    On.RainWorld.OnModsInit += RainWorld_OnModsInit;
-    On.ArenaGameSession.Update += ArenaGameSession_Update;
-    On.ArenaSitting.ctor += ArenaSitting_ctor;
-    On.RainWorldGame.Update += RainWorldGame_Update;
+    try
+    {
+      Log = Logger;
 
-    new Hook(typeof(SlugcatCustomization).GetMethod("MakeState"), SlugcatCustomization_MakeState);
-    new Hook(typeof(StoryGameMode).GetMethod("PreGameStart"), StoryGameMode_PreGameStart);
-    new Hook(typeof(OnlineManager).GetMethod("LeaveLobby", BindingFlags.Public | BindingFlags.Static), OnlineManager_LeaveLobby);
+      On.RainWorld.OnModsInit += RainWorld_OnModsInit;
+    }
+    catch (Exception e)
+    {
+      Logger.LogError(e);
+    }
   }
 
-  public static Color RandomColor() => new((float)rand.NextDouble(), (float)rand.NextDouble(), (float)rand.NextDouble());
+  public void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
+  {
+    orig(self);
+
+    if (isInit)
+      return;
+    isInit = true;
+
+    try
+    {
+      On.ArenaGameSession.Update += ArenaGameSession_Update;
+      On.ArenaSitting.ctor += ArenaSitting_ctor;
+      On.RainWorldGame.Update += RainWorldGame_Update;
+
+      new Hook(typeof(SlugcatCustomization).GetMethod("MakeState"), SlugcatCustomization_MakeState);
+      new Hook(typeof(StoryGameMode).GetMethod("PreGameStart"), StoryGameMode_PreGameStart);
+      new Hook(typeof(OnlineManager).GetMethod("LeaveLobby", BindingFlags.Public | BindingFlags.Static), OnlineManager_LeaveLobby);
+
+      pluginInterface = new PluginInterface();
+      MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
+    }
+    catch (Exception e)
+    {
+      Log.LogError(e);
+    }
+  }
+
+  public static Color RandomColor() => new(RXRandom.Float(), RXRandom.Float(), RXRandom.Float());
 
   public void OnlineManager_LeaveLobby(Action orig)
   {
@@ -58,25 +84,14 @@ public class Plugin : BaseUnityPlugin
     orig(self);
   }
 
-  public OnlineEntity.EntityData.EntityDataState SlugcatCustomization_MakeState(_dSlugcatCustomization_MakeState orig,
+  public OnlineEntity.EntityData.EntityDataState SlugcatCustomization_MakeState(Func<SlugcatCustomization, OnlineEntity, OnlineResource, OnlineEntity.EntityData.EntityDataState> orig,
     SlugcatCustomization self, OnlineEntity onlineEntity, OnlineResource inResource)
   {
     if (pluginInterface.useCustomNickname.Value && needNameUpdate)
     {
       originalName ??= self.nickname;
-      bool needSpace = false;
-      self.nickname = "";
-      if (pluginInterface.showArenaStats.Value && isArenaMode)
-      {
-        self.nickname += $"[{killedPlayers.Count}/{deaths}]";
-        needSpace = true;
-      }
-      if (needSpace)
-        self.nickname += " ";
-      if (pluginInterface.useCustomName.Value)
-        self.nickname += pluginInterface.customName.Value;
-      else
-        self.nickname += originalName;
+      self.nickname = pluginInterface.showArenaStats.Value && isArenaMode ? $"[{killedPlayers.Count}/{deaths}] " : "";
+      self.nickname += pluginInterface.useCustomName.Value ? pluginInterface.customName.Value : originalName;
       needNameUpdate = false;
     }
 
@@ -84,15 +99,13 @@ public class Plugin : BaseUnityPlugin
       switch (pluginInterface.bodyColorMode.Value)
       {
         case PluginInterface.BodyColorMode.Constant:
-          if (self.bodyColor != pluginInterface.customBodyColor.Value)
-            self.bodyColor = pluginInterface.customBodyColor.Value;
+          self.bodyColor = pluginInterface.customBodyColor.Value;
           break;
         case PluginInterface.BodyColorMode.Random:
-          if (needBodyColorUpdate)
-          {
-            self.bodyColor = RandomColor();
-            needBodyColorUpdate = false;
-          }
+          if (!needBodyColorUpdate)
+            break;
+          self.bodyColor = RandomColor();
+          needBodyColorUpdate = false;
           break;
       }
 
@@ -100,8 +113,7 @@ public class Plugin : BaseUnityPlugin
       switch (pluginInterface.eyeColorMode.Value)
       {
         case PluginInterface.EyeColorMode.Constant:
-          if (self.eyeColor != pluginInterface.customEyeColor.Value)
-            self.eyeColor = pluginInterface.customEyeColor.Value;
+          self.eyeColor = pluginInterface.customEyeColor.Value;
           break;
         case PluginInterface.EyeColorMode.RandomConstant:
           if (needEyeColorUpdate)
@@ -111,8 +123,7 @@ public class Plugin : BaseUnityPlugin
           }
           break;
         case PluginInterface.EyeColorMode.BodyColor:
-          if (self.eyeColor != self.bodyColor)
-            self.eyeColor = self.bodyColor;
+          self.eyeColor = self.bodyColor;
           break;
         case PluginInterface.EyeColorMode.Random:
           if (pluginInterface.eyeSwitchTimer.Value == 0 || ++eyeColorCounter % pluginInterface.eyeSwitchTimer.Value == 0)
@@ -121,18 +132,12 @@ public class Plugin : BaseUnityPlugin
         case PluginInterface.EyeColorMode.Wave:
           float multiplier = (float)Math.Sin(++eyeIterator * pluginInterface.waveSpeed.Value / 1000.0);
           Color dColor = pluginInterface.customEyeWaveColor.Value - pluginInterface.customEyeColor.Value;
-          self.eyeColor = pluginInterface.customEyeColor.Value + new Color(
-            dColor.r * multiplier,
-            dColor.g * multiplier,
-            dColor.b * multiplier);
+          self.eyeColor = pluginInterface.customEyeColor.Value + new Color(dColor.r * multiplier, dColor.g * multiplier, dColor.b * multiplier);
           break;
         case PluginInterface.EyeColorMode.SpeedBased:
           float velMultiplier = (float)Math.Min(1.0, Math.Sqrt(velocity / 24.0));
           Color dVelColor = pluginInterface.customEyeWaveColor.Value - pluginInterface.customEyeColor.Value;
-          self.eyeColor = pluginInterface.customEyeColor.Value + new Color(
-            dVelColor.r * velMultiplier,
-            dVelColor.g * velMultiplier,
-            dVelColor.b * velMultiplier);
+          self.eyeColor = pluginInterface.customEyeColor.Value + new Color(dVelColor.r * velMultiplier, dVelColor.g * velMultiplier, dVelColor.b * velMultiplier);
           break;
         case PluginInterface.EyeColorMode.RainbowA:
           float step = pluginInterface.waveSpeed.Value / 1000f;
@@ -203,21 +208,10 @@ public class Plugin : BaseUnityPlugin
         UpdateVelocity(abstractPlayer.realizedCreature.mainBodyChunk.vel);
   }
 
-  public void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
-  {
-    orig(self);
-
-    pluginInterface = new PluginInterface();
-    MachineConnector.SetRegisteredOI(PLUGIN_GUID, pluginInterface);
-  }
-
   public void NeedUpdateEverything()
   {
-    needNameUpdate = true;
-    needBodyColorUpdate = true;
-    needEyeColorUpdate = true;
-    isArenaMode = false;
-    wasDeadThisSession = false;
+    needNameUpdate = needBodyColorUpdate = needEyeColorUpdate = true;
+    isArenaMode = wasDeadThisSession = false;
   }
 
   public void ResetFull()
@@ -238,10 +232,10 @@ public class Plugin : BaseUnityPlugin
     if (playerIndex != -1 && playerIndex < self.arenaSitting.players.Count)
       return true;
     ArenaOnlineGameMode onlineArena = OnlineManager.lobby.gameMode as ArenaOnlineGameMode;
-    foreach (ArenaSitting.ArenaPlayer player in self.arenaSitting.players)
+    foreach (ArenaSitting.ArenaPlayer player in self.arenaSitting.players.ToArray())
     {
       OnlinePlayer onlineArenaPlayer = ArenaHelpers.FindOnlinePlayerByFakePlayerNumber(onlineArena, player.playerNumber);
-      if (!onlineArenaPlayer.isMe)
+      if (onlineArenaPlayer == null || !onlineArenaPlayer.isMe)
         continue;
       me = onlineArenaPlayer;
       playerIndex = player.playerNumber;
@@ -253,8 +247,8 @@ public class Plugin : BaseUnityPlugin
 
   public void UpdateVelocity(Vector2 vel)
   {
-    double dx = vel.x, dy = vel.y - 1.5, newVelocity = (float)Math.Sqrt(dx * dx + dy * dy);
-    velocity += (newVelocity - velocity) * pluginInterface.colorSpeedMultiplier.Value / 100.0;
+    double dx = vel.x, dy = vel.y - 1.5;
+    velocity += (Math.Sqrt(dx * dx + dy * dy) - velocity) * pluginInterface.colorSpeedMultiplier.Value / 100.0;
   }
 
   public void ArenaGameSession_Update(On.ArenaGameSession.orig_Update orig, ArenaGameSession self)
@@ -268,27 +262,24 @@ public class Plugin : BaseUnityPlugin
     {
       if (abstractPlayer.ID.number == 0)
         UpdateVelocity(abstractPlayer.realizedCreature.mainBodyChunk.vel);
-      if (abstractPlayer.realizedCreature is Player player && player.dead && player.killTag != null && player.killTag.ID.number == 0 && !killedPlayers.Contains(player))
-      {
-        killedPlayers.Add(player);
-        needNameUpdate = true;
-      }
+      if (abstractPlayer.realizedCreature is not Player player || !player.dead || player.killTag == null || player.killTag.ID.number != 0 || killedPlayers.Contains(player))
+        continue;
+      killedPlayers.Add(player);
+      needNameUpdate = true;
     }
 
-    if (delayedDeathCounter != self.arenaSitting.players[playerIndex].deaths)
-    {
-      delayedDeathCounter = self.arenaSitting.players[playerIndex].deaths;
-      needNameUpdate = true;
-      if (delayedDeathCounter != 0)
-        ++deaths;
-    }
+    if (delayedDeathCounter == self.arenaSitting.players[playerIndex].deaths)
+      return;
+    delayedDeathCounter = self.arenaSitting.players[playerIndex].deaths;
+    needNameUpdate = true;
+    if (delayedDeathCounter != 0)
+      ++deaths;
   }
 
   public void ArenaSitting_ctor(On.ArenaSitting.orig_ctor orig, ArenaSitting self, ArenaSetup.GameTypeSetup gameTypeSetup, MultiplayerUnlocks multiplayerUnlocks)
   {
     orig(self, gameTypeSetup, multiplayerUnlocks);
-    if (OnlineManager.lobby == null)
-      return;
-    ResetFull();
+    if (OnlineManager.lobby != null)
+      ResetFull();
   }
 }
