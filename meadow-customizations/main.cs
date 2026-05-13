@@ -17,7 +17,7 @@ public static class LogWrapper
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "gelbi.meadow_customizations", PLUGIN_NAME = "Meadow Customizations", PLUGIN_VERSION = "1.0.5";
+  public const string PLUGIN_GUID = "gelbi.meadow_customizations", PLUGIN_NAME = "Meadow Customizations", PLUGIN_VERSION = "1.0.6";
 
   public bool isInit = false, needNameUpdate = true, needBodyColorUpdate = true, needEyeColorUpdate = true, isArenaMode = false, wasDeadThisSession = false;
   public int playerIndex = -1, deaths = 0, eyeColorCounter = 0, eyeIterator = 0, delayedDeathCounter = 0, rainbowColorStep = 1;
@@ -258,11 +258,13 @@ public class Plugin : BaseUnityPlugin
       return;
     isArenaMode = true;
 
-    foreach (AbstractCreature abstractPlayer in self.Players)
+    foreach (AbstractCreature abstractPlayer in self.Players.ToArray())
     {
+      if (abstractPlayer.realizedCreature is not Player player)
+        continue;
       if (abstractPlayer.ID.number == 0)
         UpdateVelocity(abstractPlayer.realizedCreature.mainBodyChunk.vel);
-      if (abstractPlayer.realizedCreature is not Player player || !player.dead || player.killTag == null || player.killTag.ID.number != 0 || killedPlayers.Contains(player))
+      if (!player.dead || player.killTag == null || player.killTag.ID.number != 0 || killedPlayers.Contains(player))
         continue;
       killedPlayers.Add(player);
       needNameUpdate = true;
