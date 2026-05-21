@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using Watcher;
 
 namespace faster_world;
-using static CommonWrapper;
 
 public static class M_Save
 {

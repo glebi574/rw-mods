@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Text;
 
 namespace faster_world;
-using static CommonWrapper;
 
 public static class M_World
 {

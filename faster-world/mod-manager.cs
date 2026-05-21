@@ -13,7 +13,6 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace faster_world;
-using static CommonWrapper;
 
 public static class M_ModManager
 {
@@ -23,25 +22,27 @@ public static class M_ModManager
   {
     ILCursor c = new(il);
 
-    if (c.TryGotoNext(
-      i => i.MatchCall(typeof(Custom).GetMethod("RootFolderDirectory"))))
-    {
-      c.Emit(OpCodes.Ldarg_0);
-      c.Emit(OpCodes.Call, ((Delegate)RefreshModsLists).Method);
-      c.Emit(OpCodes.Br, il.Instrs.First(i => i.OpCode == OpCodes.Call && i.Operand is MethodReference m && m.Name == "_RefreshOIs"));
-    }
+    if (c.TryGotoNext(i => i.MatchCall(typeof(Custom).GetMethod("RootFolderDirectory"))))
+      c.Emit(OpCodes.Ldarg_0)
+       .Emit(OpCodes.Call, ((Delegate)RefreshModsLists).Method)
+       .Emit(OpCodes.Br, il.Instrs.First(i => i.OpCode == OpCodes.Call && i.Operand is MethodReference m && m.Name == "_RefreshOIs"));
+    if (c.TryGotoNext(i => i.OpCode == OpCodes.Ret))
+      c.Emit(OpCodes.Call, ((Delegate)UpdateConsolePaths).Method);
   }
 
-  public static void RefreshModsLists(RainWorld rainWorld)
+  public static void UpdateConsolePaths() =>
+    M_Assets.consolefilesPath = AssetManager.GetConsoleFilesSubfolder() is string consoleFilesSubfolder
+      ? Path.Combine(Custom.rootFolderDirectory, "consolefiles", consoleFilesSubfolder + '\\')
+      : null;
+
+  static void RefreshModsLists(RainWorld rainWorld)
   {
-    // I dare you to check original implementation
-    ConcurrentDictionary<int, ModManager.Mod> storedMods = new();
-    string[] modFolders = Directory.GetDirectories($"{Custom.RootFolderDirectory()}{Path.DirectorySeparatorChar}mods");
+    ConcurrentDictionary<int, ModManager.Mod> storedMods = [];
+    string[] modFolders = Directory.GetDirectories(Path.Combine(Custom.rootFolderDirectory, "mods"));
     int modAmount = modFolders.Length;
-    Parallel.For(0, modFolders.Length, i =>
+    Parallel.For(0, modAmount, i =>
     {
-      ModManager.Mod mod = ModManager.LoadModFromJson(rainWorld, modFolders[i], modFolders[i]);
-      if (mod != null)
+      if (ModManager.LoadModFromJson(rainWorld, modFolders[i], modFolders[i]) is ModManager.Mod mod)
         storedMods[i] = mod;
     });
     if (rainWorld.processManager?.mySteamManager != null)
@@ -49,10 +50,8 @@ public static class M_ModManager
       PublishedFileId_t[] subscribedItems = rainWorld.processManager.mySteamManager.GetSubscribedItems();
       Parallel.For(0, subscribedItems.Length, i =>
       {
-        if (!SteamUGC.GetItemInstallInfo(subscribedItems[i], out _, out string modFolder, 1024U, out _))
-          return;
-        ModManager.Mod mod = ModManager.LoadModFromJson(rainWorld, modFolder, modFolder);
-        if (mod == null)
+        if (!SteamUGC.GetItemInstallInfo(subscribedItems[i], out _, out string modFolder, 1024U, out _)
+        || ModManager.LoadModFromJson(rainWorld, modFolder, modFolder) is not ModManager.Mod mod)
           return;
         mod.workshopId = subscribedItems[i].m_PublishedFileId;
         mod.workshopMod = true;
@@ -65,14 +64,6 @@ public static class M_ModManager
     for (int i = 0; i < modAmount; ++i)
       if (storedMods.TryGetValue(i, out ModManager.Mod mod) && modIDs.Add(mod.id))
         ModManager.InstalledMods.Add(mod);
-  }
-
-  public static void AssignStringList(ref string[] target, object jsonData)
-  {
-    List<object> data = (List<object>)jsonData;
-    target = new string[data.Count];
-    for (int i = 0; i < target.Length; ++i)
-      target[i] = data[i].ToString();
   }
 
   public static ModManager.Mod LoadModFromJson(RainWorld rainWorld, string modpath, string _)
@@ -123,8 +114,12 @@ public static class M_ModManager
       }
       void TryUpdateList(string key, ref string[] field)
       {
-        if (modInfoData.TryGetValue(key, out object value))
-          AssignStringList(ref field, value);
+        if (!modInfoData.TryGetValue(key, out object value))
+          return;
+        List<object> data = (List<object>)value;
+        field = new string[data.Count];
+        for (int i = 0; i < field.Length; ++i)
+          field[i] = data[i].ToString();
       }
       TryUpdateString("id", ref mod.id);
       TryUpdateString("name", ref mod.name);
@@ -190,25 +185,21 @@ public static class M_ModManager
   public static string ComputeModChecksum(string modFolder)
   {
     string modinfoPath = $"{modFolder}\\modinfo.json";
-    if (File.Exists(modinfoPath))
-    {
-      Dictionary<string, object> dictionary = File.ReadAllText(modinfoPath).dictionaryFromJson();
-      if (dictionary != null && dictionary.ContainsKey("version") && dictionary.TryGetValue("checksum_override_version", out object overrideChecksum) && (bool)overrideChecksum)
-        return dictionary["version"].ToString();
-    }
+    if (File.Exists(modinfoPath) && File.ReadAllText(modinfoPath).dictionaryFromJson() is Dictionary<string, object> dictionary
+      && dictionary.TryGetValue("version", out object version) && dictionary.TryGetValue("checksum_override_version", out object overrideChecksum) && (bool)overrideChecksum)
+      return version.ToString();
 
-    string relativeRoot = Custom.RootFolderDirectory().ToLowerInvariant();
+    string relativeRoot = Custom.rootFolderDirectory.ToLowerInvariant();
     string[] fileNames = Directory.GetFiles(modFolder.ToLowerInvariant(), "*.txt", SearchOption.AllDirectories);
     Array.Sort(fileNames);
-    MD5 md = MD5.Create();
+    using MD5 md = MD5.Create();
     byte[][] fileNamesBytes = new byte[fileNames.Length][], fileContentsBytes = new byte[fileNames.Length][];
     Parallel.For(0, fileNames.Length, i =>
     {
       string fileName = fileNames[i];
-      if (relativeRoot == "" || !fileName.Contains(relativeRoot))
-        fileNamesBytes[i] = Encoding.UTF8.GetBytes(fileName);
-      else
-        fileNamesBytes[i] = Encoding.UTF8.GetBytes(fileName.Substring(fileName.IndexOf(relativeRoot) + relativeRoot.Length));
+      fileNamesBytes[i] = Encoding.UTF8.GetBytes(relativeRoot == "" || !fileName.Contains(relativeRoot)
+        ? fileName
+        : fileName.Substring(fileName.IndexOf(relativeRoot) + relativeRoot.Length));
       fileContentsBytes[i] = Encoding.UTF8.GetBytes(new FileInfo(fileName).Length.ToString());
     });
     for (int i = 0; i < fileNames.Length; ++i)
@@ -217,8 +208,6 @@ public static class M_ModManager
       md.TransformBlock(fileContentsBytes[i], 0, fileContentsBytes[i].Length, fileContentsBytes[i], 0);
     }
     md.TransformFinalBlock([], 0, 0);
-    string result = BitConverter.ToString(md.Hash).Replace("-", "").ToLower();
-    md.Dispose();
-    return result;
+    return BitConverter.ToString(md.Hash).Replace("-", "").ToLower();
   }
 }

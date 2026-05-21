@@ -1,5 +1,6 @@
 ﻿//#define _DEV
 
+global using static faster_world.CommonWrapper;
 using BepInEx;
 using gelbi_silly_lib;
 using MonoMod.RuntimeDetour;
@@ -7,8 +8,6 @@ using System;
 using System.Reflection;
 
 namespace faster_world;
-using static CommonWrapper;
-
 #if _DEV
 using profiler;
 #endif
@@ -37,8 +36,7 @@ public static class CommonWrapper
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "0gelbi.faster-world", PLUGIN_NAME = "Faster World", PLUGIN_VERSION = "1.0.11", targetVersion = "1.11.7b";
-
+  public const string PLUGIN_GUID = "0gelbi.faster-world", PLUGIN_NAME = "Faster World", PLUGIN_VERSION = "1.0.12", targetVersion = "1.11.8";
   public static bool isInit = false, gslEnabled = false;
   public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
@@ -46,7 +44,14 @@ public class Plugin : BaseUnityPlugin
   {
     Log = Logger;
 
-    On.Futile.ctor += Futile_ctor;
+    try
+    {
+      On.Futile.ctor += Futile_ctor;
+    }
+    catch (Exception e)
+    {
+      Logger.LogError(e);
+    }
   }
 
   public static void Optimize<T>(string methodName) => typeof(T).GetMethod(methodName, flags).MethodHandle.GetFunctionPointer(); // so that's why it works
@@ -96,7 +101,7 @@ public class Plugin : BaseUnityPlugin
         ReplaceFL = (type, methodName, parameterTypes, target) => new NativeDetour(type.GetMethod(methodName, flags, null, parameterTypes, null), target.Method);
       }
 
-      #region 1.0.11
+      #region 1.0.12
 
       Optimize<Room>("Loaded");
       Optimize<PlacedObject>("GenerateEmptyData");
@@ -125,9 +130,12 @@ public class Plugin : BaseUnityPlugin
       ReplaceF(typeof(AImap), "ConnectionCostForCreature", M_World.AImap_ConnectionCostForCreature);
 
       ReplaceF(typeof(WorldLoader), "LoadAbstractRoom", M_World2.WorldLoader_LoadAbstractRoom);
-      ReplaceF(typeof(WorldLoader), "FindRoomFile", M_World2.WorldLodaer_FindRoomFile);
       ReplaceF(typeof(RoomPreprocessor), "StringToConnMap", M_World2.RoomPreprocessor_StringToConnMap);
       ReplaceF(typeof(RoomSettings), "FindParent", M_World2.RoomSettings_FindParent);
+
+      ReplaceF(typeof(WorldLoader), "FindRoomFile", M_Assets.WorldLodaer_FindRoomFile);
+      ReplaceFL(typeof(AssetManager), "ResolveFilePath", [typeof(string), typeof(bool), typeof(bool)], M_Assets.AssetManager_ResolveFilePath);
+
       On.StaticWorld.InitStaticWorld += M_World2.StaticWorld_InitStaticWorld;
       On.OverWorld.LoadWorld_string_Name_Timeline_bool += M_World2.OverWorld_LoadWorld;
       On.WorldLoader.ReturnWorld += M_World2.WorldLoader_ReturnWorld;
@@ -142,13 +150,14 @@ public class Plugin : BaseUnityPlugin
       #endregion
 
 #if _DEV
-      //Profiler.PatchMethods([
-      //  typeof(OverWorld).GetMethod("LoadFirstWorld", flags),
+      //MethodPatcher.PatchMethods([
+      //  //typeof(WorldLoader).GetMethod("FindRoomFile", flags),
+      //  //typeof(AssetManager).GetMethod("ResolveFilePath", flags, null, [typeof(string), typeof(bool), typeof(bool)], null),
       //]);
 
-      Profiler.PatchMethods([
-        M_World2.OverWorld_LoadWorld,
-        M_World2.WorldLoader_ReturnWorld,
+      MethodPatcher.PatchMethods([
+        M_World2.WorldLodaer_FindRoomFile,
+        M_World2.AssetManager_ResolveFilePath,
       ]);
 #endif
     }

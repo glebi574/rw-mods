@@ -9,7 +9,6 @@ using System.IO;
 using System.Threading.Tasks;
 
 namespace faster_world;
-using static CommonWrapper;
 
 // optimizes region loading by predicting future and stuff
 public static class M_World2
@@ -60,7 +59,7 @@ public static class M_World2
     if (cachedDirectories.ContainsKey(path))
       return;
     ConcurrentBag<string> paths = [];
-    List<string> targetPaths = [Path.Combine(Custom.RootFolderDirectory(), "mergedmods")];
+    List<string> targetPaths = [Path.Combine(Custom.rootFolderDirectory, "mergedmods")];
     foreach (ModManager.Mod mod in ModManager.ActiveMods)
     {
       if (mod.hasTargetedVersionFolder)
@@ -69,7 +68,7 @@ public static class M_World2
         targetPaths.Add(mod.NewestPath);
       targetPaths.Add(mod.path);
     }
-    targetPaths.Add(Custom.RootFolderDirectory());
+    targetPaths.Add(Custom.rootFolderDirectory);
     Parallel.ForEach(targetPaths, localPath =>
     {
       string fullPath = Path.Combine(localPath, path);
@@ -88,7 +87,7 @@ public static class M_World2
   public static void CacheTemplates()
   {
     ConcurrentBag<string> paths = [];
-    List<string> targetPaths = [Path.Combine(Custom.RootFolderDirectory(), "mergedmods")];
+    List<string> targetPaths = [Path.Combine(Custom.rootFolderDirectory, "mergedmods")];
     foreach (ModManager.Mod mod in ModManager.ActiveMods)
     {
       if (mod.hasTargetedVersionFolder)
@@ -97,7 +96,7 @@ public static class M_World2
         targetPaths.Add(mod.NewestPath);
       targetPaths.Add(mod.path);
     }
-    targetPaths.Add(Custom.RootFolderDirectory());
+    targetPaths.Add(Custom.rootFolderDirectory);
     Parallel.ForEach(targetPaths, localPath =>
     {
       string fullPath = Path.Combine(localPath, "world");
@@ -161,7 +160,7 @@ public static class M_World2
   {
     if (room.altFileName != null)
       roomName = room.altFileName;
-    string path = FindRoomFile(roomName);
+    string path = WorldLoader.FindRoomFile(roomName, false, ".txt");
     string[] array = GetCachedStrings(path);
     bool flag = RoomPreprocessor.VersionFix(ref array);
     if (int.Parse(array[9].SubstringUntil('|'), NumberStyles.Any, CultureInfo.InvariantCulture) >= world.preProcessingGeneration)
@@ -219,36 +218,6 @@ public static class M_World2
       c.Emit(OpCodes.Call, ((Delegate)GetCachedStrings).Method);
       c.Emit(OpCodes.Br_S, target);
     }
-  }
-
-  public static string FindRoomFile(string roomName)
-  {
-    string region = roomName.SubstringUntil('_'), roomFile = roomName + ".txt", text;
-    if (File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("World", region + "-Rooms", roomFile)))
-      || region.ToUpper() == "GATE"
-      && File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("World", "Gates", roomFile)))
-      || File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("World", "Gates", "gate_shelters", roomFile)))
-      || File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("Levels", roomFile)))
-      || ModManager.MSC && roomName.ToLowerInvariant().Contains("challenge") && File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("Levels", "Challenges", roomFile))))
-      return text;
-    return null;
-  }
-
-  public static string WorldLodaer_FindRoomFile(string roomName, bool includeRootDirectory, string additionalAppend, bool showWarning = true)
-  {
-    string region = roomName.SubstringUntil('_'), roomFile = roomName + additionalAppend, text;
-    if (File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("World", region + "-Rooms", roomFile)))
-      || region.ToUpper() == "GATE"
-      && File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("World", "Gates", roomFile)))
-      || File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("World", "Gates", "gate_shelters", roomFile)))
-      || File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("Levels", roomFile)))
-      || ModManager.MSC && roomName.ToLowerInvariant().Contains("challenge") && File.Exists(text = AssetManager.ResolveFilePath(Path.Combine("Levels", "Challenges", roomFile))))
-    {
-      if (includeRootDirectory)
-        return "file:///" + text;
-      return text;
-    }
-    return null;
   }
 
   public static AbstractRoomNode[] RoomPreprocessor_StringToConnMap(string str)

@@ -2,7 +2,6 @@
 using UnityEngine;
 
 namespace faster_world;
-using static CommonWrapper;
 
 public static class M_Math
 {
