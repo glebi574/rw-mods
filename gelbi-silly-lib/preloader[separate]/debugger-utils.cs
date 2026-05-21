@@ -81,6 +81,7 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
   public static Dictionary<int, TrackedIssue> indexedIssues = [];
   public static Dictionary<MethodBase, TrackedIssue> issues = [];
   public static HashSet<MethodBase> hookedMethods = [], resolvedIssues = [];
+  public static HashSet<uint> loggedMethods = [];
   public static int issueCounter = 0;
 
   public DebuggingState state = DebuggingState.Wait;
@@ -135,47 +136,64 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
   public static string ParseState(string name, object obj)
   {
     if (obj == null)
-      return $"  {name}: null";
+      return $"  ` {name}: null";
     StringBuilder sb = new(64);
-    void AppendArray(Array array)
+
+    static void AppendArray(StringBuilder builder, Array array)
     {
       Type type = array.GetType();
-      sb.Append('[');
+      builder.Append('[');
       if (array.Length > 32 || array.Length == 0)
-        sb.Append(array.Length);
+        builder.Append('<').Append(array.Length).Append('>');
       else if (type.GetElementType().IsPrimitive || type.GetElementType().IsEnum || type == typeof(string[]))
       {
         foreach (object value in array)
-          sb.Append(value).Append(", ");
-        sb.Length -= 2;
+          builder.Append(value).Append(", ");
+        builder.Length -= 2;
       }
-      sb.Append(']');
+      builder.Append(']');
     }
+    static void AppendValue(StringBuilder builder, string name, object obj)
+    {
+      if (obj == null)
+      {
+        builder.Append($"  ` {name}: null");
+        return;
+      }
+      builder.Append("  ").Append(obj.GetType().GetSimpleNameWithNamespace()).Append(' ').Append(name).Append(": ");
+      if (obj is Array array)
+      {
+        builder.Append(obj).Append(" :: ");
+        AppendArray(builder, array);
+        return;
+      }
+      else
+        switch (obj)
+        {
+          case char:
+            builder.Append($"\'{obj}\'");
+            break;
+          case string:
+            builder.Append($"\"{obj}\"");
+            break;
+          default:
+            builder.Append(obj);
+            break;
+        }
+    }
+
+    AppendValue(sb, name, obj);
     Type objectType = obj.GetType();
-    sb.Append("  ").Append(objectType.GetSimpleNameWithNamespace()).Append(" ").Append(name).Append(": ").Append(obj);
-    if (objectType.IsArray)
+    if (!objectType.IsArray && (!objectType.IsValueType || !objectType.IsPrimitive && !objectType.IsEnum) && obj is not Delegate)
     {
-      sb.Append(" : ");
-      AppendArray(obj as Array);
-    }
-    else if ((!objectType.IsValueType || !objectType.IsPrimitive && !objectType.IsEnum) && obj is not Delegate)
-    {
-      sb.Append(" : {");
+      sb.Append(" :: {");
       StringBuilder local = new(64);
       foreach (FieldInfo field in objectType.GetFields(BFlags.anyInstance))
-        if (field.FieldType.IsArray)
+        if (field.FieldType.IsArray || field.FieldType.IsPrimitive || field.FieldType.IsEnum || field.GetValue(obj) == null)
         {
-          local.Append("  ").Append(field.Name).Append(": ");
-          if (field.GetValue(obj) is Array array)
-            AppendArray(array);
-          else
-            local.Append("null");
+          AppendValue(local, field.Name, field.GetValue(obj));
           local.AppendLine();
         }
-        else if (field.FieldType.IsPrimitive || field.FieldType.IsEnum)
-          local.Append("  ").Append(field.Name).Append(": ").AppendLine(field.GetValue(obj)?.ToString() ?? "null");
-        else if (field.GetValue(obj) == null)
-          local.Append("  ").Append(field.Name).Append(": ").AppendLine("null");
       if (local.Length < 64)
       {
         local.Replace(Environment.NewLine + ' ', ",");
@@ -203,34 +221,34 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
     LogInfo($"{c.Next.GetSimpleLabel()} | {methodName}");
     if (targetMethodIndex == 0)
     {
-      c.Emit(OpCodes.Ldc_I4, id);
-      c.Emit(OpCodes.Call, m_SetInvokedFlag);
+      c.Emit(OpCodes.Ldc_I4, id)
+       .Emit(OpCodes.Call, m_SetInvokedFlag);
     }
     if ((stack[targetMethodIndex].method.MethodImplementationFlags & System.Reflection.MethodImplAttributes.AggressiveInlining) != 0)
       LogWarning($"{methodName} may be inlined away");
 
     if (il.Method.Parameters.Count != 0)
     {
-      c.Emit(OpCodes.Ldc_I4, targetMethodIndex);
-      c.EmitDelegate(ResetCapturedArguments);
+      c.Emit(OpCodes.Ldc_I4, targetMethodIndex)
+       .EmitDelegate(ResetCapturedArguments);
       foreach (ParameterDefinition parameter in il.Method.Parameters)
       {
-        c.Emit(OpCodes.Ldc_I4, targetMethodIndex);
-        c.Emit(OpCodes.Ldstr, parameter.Name);
-        c.EmitBoxedParameter(parameter);
-        c.EmitDelegate(CaptureArguments);
+        c.Emit(OpCodes.Ldc_I4, targetMethodIndex)
+         .Emit(OpCodes.Ldstr, parameter.Name)
+         .EmitBoxedParameter(parameter)
+         .EmitDelegate(CaptureArguments);
       }
     }
     if (il.Body.Variables.Count != 0)
     {
-      c.Emit(OpCodes.Ldc_I4, targetMethodIndex);
-      c.EmitDelegate(ResetCapturedLocals);
+      c.Emit(OpCodes.Ldc_I4, targetMethodIndex)
+       .EmitDelegate(ResetCapturedLocals);
       foreach (VariableDefinition variable in il.Body.Variables)
       {
-        c.Emit(OpCodes.Ldc_I4, targetMethodIndex);
-        c.Emit(OpCodes.Ldstr, "V_" + variable.Index);
-        c.EmitBoxedVariable(variable);
-        c.EmitDelegate(CaptureLocals);
+        c.Emit(OpCodes.Ldc_I4, targetMethodIndex)
+         .Emit(OpCodes.Ldstr, "V_" + variable.Index)
+         .EmitBoxedVariable(variable)
+         .EmitDelegate(CaptureLocals);
       }
     }
   }
@@ -329,6 +347,7 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
   /// </summary>
   public static void UpdateNoIssues()
   {
+    loggedMethods.Clear();
     foreach (MethodBase targetMethod in (List<MethodBase>)[.. issues.Keys])
     {
       TrackedIssue issue = issues[targetMethod];
@@ -352,7 +371,7 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
   /// <summary>
   /// Updates issue resolver with exception, which allows to progress debugging
   /// </summary>
-  public static void Update(Exception e)
+  public static void Update(Exception e, string type)
   {
     List<ResolvedTraceMethod> resolvedStack;
     if (e.InnerException == null)
@@ -363,6 +382,12 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
       foreach (ResolvedTraceMethod method in e.GetResolvedMethodTrace())
         resolvedStack.Add(method);
     }
+    // also prevents exception with modified methods from being logged after original one in gsl log
+    uint hash = 2166136261;
+    foreach (ResolvedTraceMethod method in resolvedStack)
+      hash *= (uint)method.method?.GetHashCode() ^ 16777619;
+    if (loggedMethods.Add(hash))
+      GSLLog.GLog($"{GSLLog.TimeLabel()} {type} {e}\n");
     for (int i = resolvedStack.Count - 1; i >= 0; --i)
       if (resolvedStack[i].method == null || resolvedStack[i].method.DeclaringType == typeof(TrackedIssue) || resolvedStack[i].method.DeclaringType?.Name == "IssueResolver")
         resolvedStack.RemoveAt(i);
@@ -446,6 +471,13 @@ public static class Extensions
         }
         continue;
       }
+      if (dmdData.definition.OriginalMethod == null)
+      {
+        lastMethod = null;
+        flags = ResolvedTraceMethod.Flags.DynamicOrig;
+        methods.Add(new(((Delegate)NotAMethod_NullOriginatingDMDEncountered).Method, frame.GetILOffset(), flags, codeLocation));
+        continue;
+      }
       lastMethod = dmdData.definition.OriginalMethod;
       flags = ResolvedTraceMethod.Flags.DynamicOrig;
       if (dmdData.definition.OriginalMethod.IsILModified)
@@ -454,6 +486,8 @@ public static class Extensions
     }
     return methods;
   }
+
+  static void NotAMethod_NullOriginatingDMDEncountered() { }
 
   /// <summary>
   /// Returns list of resolved methods with according data for exception's stack trace (which doesn't include wrapper DMDs).
@@ -464,7 +498,17 @@ public static class Extensions
 
 public static class DebuggerUtils
 {
-  static string Exception_ToString(Func<Exception, string> orig, Exception self) => $"\n{GetSimplifiedException(self)}\n! <original> {orig(self)}";
+  static string Exception_ToString(Func<Exception, string> orig, Exception self)
+  {
+    try
+    {
+      return $"\n{GetSimplifiedException(self)}\n! <original> {orig(self)}";
+    }
+    catch (Exception e)
+    {
+      return $"\n! <original> {orig(self)}\n! <failed to retrieve simplified stack trace> {orig(e)}";
+    }
+  }
 
   static DebuggerUtils()
   {

@@ -1,4 +1,5 @@
-﻿using BepInEx;
+﻿global using static gelbi_silly_lib.LogWrapper;
+using BepInEx;
 using gelbi_silly_lib.MonoModUtils;
 using gelbi_silly_lib.SavedDataManagerExtensions;
 using Menu;
@@ -7,7 +8,6 @@ using MonoMod.Cil;
 using RWCustom;
 using System;
 using System.Collections.Generic;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 
@@ -116,8 +116,8 @@ public class Plugin : BaseUnityPlugin
 
     if (c.TryGotoNext(i => i.OpCode == OpCodes.Ble))
     {
-      c.Emit(OpCodes.Pop);
-      c.Emit(OpCodes.Ldc_I4, int.MaxValue);
+      c.Emit(OpCodes.Pop)
+       .Emit(OpCodes.Ldc_I4, int.MaxValue);
     }
   }
 

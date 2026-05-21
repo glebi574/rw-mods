@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using UnityEngine;
 using static gelbi_silly_lib.LogWrapper;
 
@@ -47,10 +48,23 @@ namespace gelbi_silly_lib
         LogInfo(spriteKVP.Key);
     }
 
-    public static void LogActiveMods()
+    public static void LogTiles(Room room)
     {
-      foreach (ModManager.Mod mod in ModManager.ActiveMods)
-        LogInfo(mod.GetSimpleLabel());
+      StringBuilder sb = new StringBuilder(room.Tiles.Length + 64).AppendLine($"* Logging tiles of {room.abstractRoom.name}:");
+      for (int i = room.Tiles.GetLength(1) - 1; i >= 0; --i)
+      {
+        for (int j = 0; j < room.Tiles.GetLength(0); ++j)
+          sb.Append(room.Tiles[j, i].Terrain switch
+          {
+            Room.Tile.TerrainType.ShortcutEntrance => 'E',
+            Room.Tile.TerrainType.Solid => '█',
+            Room.Tile.TerrainType.Air => ' ',
+            Room.Tile.TerrainType.Floor => '=',
+            Room.Tile.TerrainType.Slope => '◇',
+          });
+        sb.AppendLine();
+      }
+      LogInfo(sb.ToString());
     }
   }
 }

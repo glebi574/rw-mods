@@ -120,33 +120,35 @@ public static class Extensions
   /// <summary>
   /// Emits parameter and boxes it to be accepted as <see cref="System.Object"/>
   /// </summary>
-  public static void EmitBoxedParameter(this ILCursor c, ParameterDefinition parameter)
+  public static ILCursor EmitBoxedParameter(this ILCursor c, ParameterDefinition parameter)
   {
     if (parameter.ParameterType.IsByReference || parameter.ParameterType.IsPointer)
     {
-      c.Emit(OpCodes.Ldarga, parameter.Index);
-      c.Emit(OpCodes.Ldobj, parameter.ParameterType.GetElementType());
-      c.Emit(OpCodes.Box, parameter.ParameterType.GetElementType());
-      return;
+      c.Emit(OpCodes.Ldarga, parameter.Index)
+       .Emit(OpCodes.Ldobj, parameter.ParameterType.GetElementType())
+       .Emit(OpCodes.Box, parameter.ParameterType.GetElementType());
+      return c;
     }
-    c.Emit(OpCodes.Ldarg, parameter.Index);
-    c.Emit(OpCodes.Box, parameter.ParameterType);
+    c.Emit(OpCodes.Ldarg, parameter.Index)
+     .Emit(OpCodes.Box, parameter.ParameterType);
+    return c;
   }
 
   /// <summary>
   /// Emits variable and boxes it to be accepted as <see cref="System.Object"/>
   /// </summary>
-  public static void EmitBoxedVariable(this ILCursor c, VariableDefinition variable)
+  public static ILCursor EmitBoxedVariable(this ILCursor c, VariableDefinition variable)
   {
     if (variable.VariableType.IsByReference || variable.VariableType.IsPointer)
     {
-      c.Emit(OpCodes.Ldloca, variable.Index);
-      c.Emit(OpCodes.Ldobj, variable.VariableType.GetElementType());
-      c.Emit(OpCodes.Box, variable.VariableType.GetElementType());
-      return;
+      c.Emit(OpCodes.Ldloca, variable.Index)
+       .Emit(OpCodes.Ldobj, variable.VariableType.GetElementType())
+       .Emit(OpCodes.Box, variable.VariableType.GetElementType());
+      return c;
     }
-    c.Emit(OpCodes.Ldloc, variable.Index);
-    c.Emit(OpCodes.Box, variable.VariableType);
+    c.Emit(OpCodes.Ldloc, variable.Index)
+     .Emit(OpCodes.Box, variable.VariableType);
+    return c;
   }
 
   /// <summary>

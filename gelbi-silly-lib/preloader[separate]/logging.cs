@@ -92,8 +92,8 @@ public static class GSLLog
     string msg = data?.ToString() ?? "";
     if (msg.Length > 2048)
     {
-      int newLineIndex = msg.IndexOf('\n');
-      if (newLineIndex < 256 && msg.Substring(newLineIndex + 1, 3) == "IL_")
+      int newLineIndex = msg.IndexOf('\n', msg.Length / 3);
+      if (newLineIndex < msg.Length - 3 &&  msg.Substring(newLineIndex + 1, 3) == "IL_")
         msg = msg.Substring(0, newLineIndex + 1) + "  (skipped logging long method body - it's available in LogOutput.log)";
     }
     writer.WriteLine($"{TimeLabel()} [Error:\t{self.SourceName}] {msg}");

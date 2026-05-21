@@ -40,7 +40,7 @@ public static class FileUtils
   public static List<string> ListDirectory(string path, out Result opResult, bool directories = false, bool includeDuplicates = false, bool moddedOnly = false)
   {
     List<string> paths = [], duplicateNames = [],
-      targetPaths = [Path.Combine(Custom.RootFolderDirectory(), "mergedmods")];
+      targetPaths = [Path.Combine(Custom.rootFolderDirectory, "mergedmods")];
     foreach(ModManager.Mod mod in ModManager.ActiveMods)
     {
       if (mod.hasTargetedVersionFolder)
@@ -50,7 +50,7 @@ public static class FileUtils
       targetPaths.Add(mod.path);
     }
     if (!moddedOnly)
-      targetPaths.Add(Custom.RootFolderDirectory());
+      targetPaths.Add(Custom.rootFolderDirectory);
     bool directoryExists = false;
     foreach (string localPath in targetPaths)
     {

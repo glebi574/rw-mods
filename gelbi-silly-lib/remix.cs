@@ -75,7 +75,7 @@ public class PluginInterface : OptionInterface
       new OpLabel(40f, 170f, "Disable EpicOnlineServices"),
 
       new OpCheckBox(noUpdateDisable, new(10f, 130f)),
-      new OpLabelLong(new(40f, 100f), new(560f, 60f), "Prevent mods from being disabled on game update. For this option to work on game update mod has to be enabled and you have to manually update version in \"StreamingAssets\\GameVersion.txt\". If you're using this to swap assemblies, just terminate process at the end of preloader patch."),
+      new OpLabelLong(new(40f, 100f), new(560f, 60f), "Prevent mods from being disabled on game update. For this option to work, on game update this mod has to be enabled, and you have to manually update version in \"StreamingAssets\\enabledModsVersion.txt\". If you're using this to swap assemblies, just terminate process at the end of preloader patch."),
     ];
     optionsTab.AddItems(options);
 
@@ -144,6 +144,9 @@ public class PluginInterface : OptionInterface
         "1.11.4 | 24 November 2025",
         "1.11.5 | 17 December 2025",
         "1.11.6 | 2 February 2026",
+        "1.11.7 | 31 March 2026",
+        "1.11.7b | 1 April 2026",
+        "1.11.8 | 14 April 2026",
       ]),
     ];
     versioningTab.AddItems(versioning);

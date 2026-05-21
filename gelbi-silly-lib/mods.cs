@@ -9,7 +9,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using gelbi_silly_lib.Other;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 
@@ -161,7 +160,7 @@ public static class ModUtils
   {
     string folderName = Path.GetFileName(self.path);
     if (!PluginUtils.modAssemblies.TryGetValue(folderName, out HashSet<Assembly> assemblies))
-      return $"[{Directory.GetParent(self.path).Name,6}\\{folderName}".PadRight(longestFolderName + 8) + $" | {self.MetadataToString()} : <No active plugins>]";
+      return $"[{Directory.GetParent(self.path).Name, 6}\\{folderName}".PadRight(longestFolderName + 8) + $" | {self.MetadataToString()} : <No active plugins>]";
     StringBuilder sb = new(128);
     sb.Append('[').Append(Directory.GetParent(self.path).Name.PadLeft(6)).Append('\\').Append(folderName);
     if (sb.Length < longestFolderName + 8)

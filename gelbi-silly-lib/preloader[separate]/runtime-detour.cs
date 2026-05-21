@@ -70,9 +70,10 @@ public static class RuntimeDetourManager
   {
     if (self is Detour internalDetour && internalDetour.Target.DeclaringType == null)
       return;
-
-    hookLists.AddOrCreateWith(to.DeclaringType?.Assembly ?? GSLPUtils.gslpAssembly, self);
-    hookMaps.AddOrCreateWith(from, self);
+    if (from == null)
+      throw new ArgumentNullException("from", $"Exception, while instantiating {self.GetType().GetSimpleName()}{(to == null ? "" : $" targeting {to.GetSimpleName()}")}, hooked method can't be null");
+    if (to == null)
+      throw new ArgumentNullException("to", $"Exception, while instantiating {self.GetType().GetSimpleName()} for {from.GetSimpleName()}, target method can't be null");
 
     switch (self)
     {
@@ -80,14 +81,17 @@ public static class RuntimeDetourManager
         nativeDetourMethods[native] = from;
         nativeDetourTargets[native] = to;
         nativeDetourMaps.AddOrCreateWith(from, native);
-        return;
+        break;
       case Detour detour:
         DMDOwners[detour.TargetReal] = self;
-        return;
+        break;
       case Hook hook:
         DMDOwners[hook.Detour.TargetReal] = self;
-        return;
+        break;
     }
+
+    hookLists.AddOrCreateWith(to.DeclaringType?.Assembly ?? GSLPUtils.gslpAssembly, self);
+    hookMaps.AddOrCreateWith(from, self);
   }
 
   /// <summary>
@@ -98,8 +102,7 @@ public static class RuntimeDetourManager
   {
     try
     {
-      if (self is NativeDetour native
-        && nativeDetourMethods.TryGetValue(native, out MethodBase method) && nativeDetourTargets.TryGetValue(native, out MethodBase target))
+      if (self is NativeDetour native && nativeDetourMethods.TryGetValue(native, out MethodBase method) && nativeDetourTargets.TryGetValue(native, out MethodBase target))
       {
         if (!method.GetReturnType().IsCompatible(target.GetReturnType()))
           throw new InvalidOperationException($"Return type of native detour for {method.GetFullSimpleName()} doesn't match, must be {method.GetReturnType().GetSimpleName()}");
@@ -190,18 +193,18 @@ public static class RuntimeDetourManager
 
   static void Hook_ctor(ILContext il)
   {
+    static void TryUpdateDMDData(MethodInfo method, Hook self)
+    {
+      if (specificDMDMap.TryGetValue(method, out LinkedDMDData dmdData))
+        dmdData.detour = self;
+    }
+
     ILCursor c = new(il);
 
     if (c.TryGotoNext(i => i.MatchStfld<Hook>("TargetReal")))
-    {
-      c.Emit(OpCodes.Dup);
-      c.Emit(OpCodes.Ldarg_0);
-      c.EmitDelegate(static (MethodInfo method, Hook self) =>
-      {
-        if (specificDMDMap.TryGetValue(method, out LinkedDMDData dmdData))
-          dmdData.detour = self;
-      });
-    }
+      c.Emit(OpCodes.Dup)
+       .Emit(OpCodes.Ldarg_0)
+       .Emit(OpCodes.Call, ((Delegate)TryUpdateDMDData).Method);
   }
 
   static MethodInfo DMDEmitDynamicMethodGenerator__Generate(Func<DMDEmitDynamicMethodGenerator, DynamicMethodDefinition, object, MethodInfo> orig, DMDEmitDynamicMethodGenerator self, DynamicMethodDefinition dmd, object context)
@@ -322,8 +325,7 @@ public static class RuntimeDetourManager
       if (hookListKVP.Key == typeof(Harmony).Assembly)
       {
         LogInfo("<Methods in this assembly are Harmony patches, defined by other assemblies>");
-        foreach (KeyValuePair<MethodBase, PatchInfo> patchKVP in
-          (Dictionary<MethodBase, PatchInfo>)typeof(PatchManager).GetField("PatchInfos", BFlags.anyDeclaredStatic).GetValue(null))
+        foreach (KeyValuePair<MethodBase, PatchInfo> patchKVP in (Dictionary<MethodBase, PatchInfo>)typeof(PatchManager).GetField("PatchInfos", BFlags.anyDeclaredStatic).GetValue(null))
         {
           LogPatches(patchKVP.Value.prefixes, "Prefix");
           LogPatches(patchKVP.Value.postfixes, "Postfix");

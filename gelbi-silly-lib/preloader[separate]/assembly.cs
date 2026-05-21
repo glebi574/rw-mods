@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 
@@ -31,6 +30,7 @@ public static class AssemblyUtils
   static AssemblyUtils()
   {
     new Hook(typeof(Assembly).GetMethod("LoadFile", BFlags.anyDeclaredStatic, null, [typeof(string)], null), Assembly_LoadFile);
+    new Hook(typeof(AssemblyDefinition).GetMethod("ReadAssembly", BFlags.anyDeclaredStatic, null, [typeof(string)], null), AssemblyDefinition_ReadAssembly);
     new Hook(typeof(Assembly).GetProperty("Location").GetGetMethod(), Assembly_getLocation);
   }
 
@@ -58,9 +58,14 @@ public static class AssemblyUtils
     foreach (Action<AssemblyDefinition> patch in universalPatches)
       patch(asm);
 
-    locations[Path.GetFileNameWithoutExtension(path)] = path;
     AssemblyPatcher.Load(asm, filename);
     return AppDomain.CurrentDomain.GetAssemblies().Last();
+  }
+
+  static AssemblyDefinition AssemblyDefinition_ReadAssembly(Func<string, AssemblyDefinition> orig, string fileName)
+  {
+    locations[Path.GetFileNameWithoutExtension(fileName)] = fileName;
+    return orig(fileName);
   }
 
   static string Assembly_getLocation(Func<Assembly, string> orig, Assembly self)

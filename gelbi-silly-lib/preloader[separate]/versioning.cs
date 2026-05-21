@@ -72,6 +72,7 @@ public class AssemblyMap
     defMapWriter.Close();
     File.WriteAllBytes(Path.Combine(versionedPath, "hash-map.txt"), [.. hashMap]);
     File.WriteAllBytes(Path.Combine(versionedPath, "opcode-map.txt"), [.. opCodeMap]);
+    managedVersions.Add(GSLPUtils.gameVersion);
     LogInfo($"Generated assembly maps for {GSLPUtils.gameVersion}");
   }
 

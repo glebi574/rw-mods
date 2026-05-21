@@ -1,9 +1,7 @@
 ﻿using gelbi_silly_lib.Debugging;
-using Mono.Cecil.Cil;
-using MonoMod.Cil;
+using gelbi_silly_lib.ReflectionUtils;
+using MonoMod.RuntimeDetour;
 using System;
-using System.IO;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 
@@ -13,36 +11,34 @@ public static class IssueResolver
 
   internal static void ApplyHooks()
   {
-    IL.RainWorld.HandleLog += RainWorld_HandleLog;
+    new Hook(typeof(UnityEngine.StackTraceUtility).GetMethod("ExtractStringFromExceptionInternal", BFlags.anyDeclaredStatic), StackTraceUtility_ExtractStringFromExceptionInternal);
     On.RainWorld.Update += RainWorld_Update;
+  }
+
+  public delegate void ExtractStringFromExceptionInternal_d(object exceptiono, out string message, out string stackTrace);
+  static void StackTraceUtility_ExtractStringFromExceptionInternal(ExtractStringFromExceptionInternal_d orig, object exceptiono, out string message, out string stackTrace)
+  {
+    orig(exceptiono, out message, out stackTrace);
+    if (exceptiono is not Exception e)
+      return;
+    string originalMessage = message, originalStackTrace = stackTrace;
+    try
+    {
+      stackTrace = $"\n! <original> {message}\n{stackTrace}";
+      message = DebuggerUtils.GetSimplifiedException(e);
+      TrackedIssue.Update(e, "[unhandled exception]");
+    }
+    catch (Exception ei)
+    {
+      message = originalMessage;
+      stackTrace = originalStackTrace;
+      LogError($"Failed to process exception captured by UnityEngine: {ei}");
+    }
   }
 
   static void RainWorld_Update(On.RainWorld.orig_Update orig, RainWorld self)
   {
-    try
-    {
-      orig(self);
-      TrackedIssue.UpdateNoIssues();
-    }
-    catch (Exception e)
-    {
-      latestException = e;
-      TrackedIssue.Update(e);
-      throw;
-    }
-  }
-
-  static void RainWorld_HandleLog(ILContext il)
-  {
-    ILCursor c = new(il);
-
-    if (c.TryGotoNext(i => i.OpCode == OpCodes.Ldstr))
-      c.EmitDelegate(() =>
-      {
-        if (latestException == null)
-          return;
-        File.AppendAllText("exceptionLog.txt", DebuggerUtils.GetSimplifiedException(latestException) + "\n! <original> ");
-        GSLLog.GLog($"{GSLLog.TimeLabel()} [unhandled exception] {latestException}\n");
-      });
+    orig(self);
+    TrackedIssue.UpdateNoIssues();
   }
 }

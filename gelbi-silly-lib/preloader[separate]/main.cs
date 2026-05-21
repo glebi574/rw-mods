@@ -1,4 +1,5 @@
-﻿using gelbi_silly_lib.ReflectionUtils;
+﻿global using static gelbi_silly_lib.LogWrapper;
+using gelbi_silly_lib.ReflectionUtils;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using System;
@@ -9,7 +10,7 @@ namespace gelbi_silly_lib;
 
 public static class Patcher
 {
-  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.4";
+  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.5";
 
   public static void Initialize(params Type[] modules)
   {
