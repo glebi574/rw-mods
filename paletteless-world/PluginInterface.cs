@@ -1,4 +1,5 @@
 ﻿using Menu.Remix.MixedUI;
+using System;
 using System.IO;
 using UnityEngine;
 
@@ -59,7 +60,7 @@ public class PluginInterface : OptionInterface
     {
       AssetManager.SafeWWWLoadTexture(ref texture, AssetManager.ResolveFilePath(Path.Combine("palettes", "palette" + palette + ".png")), false, true);
     }
-    catch (FileLoadException)
+    catch (Exception)
     {
       AssetManager.SafeWWWLoadTexture(ref texture, AssetManager.ResolveFilePath(Path.Combine("palettes", "palette-1.png")), false, true);
     }
