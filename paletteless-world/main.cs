@@ -15,7 +15,7 @@ public static class LogWrapper
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "gelbi.paletteless-world", PLUGIN_NAME = "Paletteless World", PLUGIN_VERSION = "1.0.0";
+  public const string PLUGIN_GUID = "gelbi.paletteless-world", PLUGIN_NAME = "Paletteless World", PLUGIN_VERSION = "1.0.1";
   public static bool isInit = false;
 
   public static PluginInterface pluginInterface;
@@ -52,8 +52,10 @@ public class Plugin : BaseUnityPlugin
     palettes.Clear();
     foreach (string path in Directory.GetFiles(Path.Combine(Custom.rootFolderDirectory, "palettes"), "palette*.png"))
       palettes.Add(Path.GetFileNameWithoutExtension(path).Substring(7));
-    foreach (string path in Directory.GetFiles(Path.Combine(Custom.rootFolderDirectory, "mergedmods\\palettes"), "palette*.png"))
-      palettes.Add(Path.GetFileNameWithoutExtension(path).Substring(7));
+    string mergedPalettes = Path.Combine(Custom.rootFolderDirectory, "mergedmods\\palettes");
+    if (Directory.Exists(mergedPalettes))
+      foreach (string path in Directory.GetFiles(mergedPalettes, "palette*.png"))
+        palettes.Add(Path.GetFileNameWithoutExtension(path).Substring(7));
   }
 
   public static void RainWorld_OnModsInit(On.RainWorld.orig_OnModsInit orig, RainWorld self)
