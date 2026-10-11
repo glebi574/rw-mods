@@ -1,4 +1,4 @@
-﻿#define _DEV
+﻿//#define _DEV
 
 global using static faster_world_extra.CommonWrapper;
 #if _DEV
@@ -37,7 +37,7 @@ public static class CommonWrapper
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "0gelbi.faster-world-extra", PLUGIN_NAME = "Faster World Extra", PLUGIN_VERSION = "1.0.1", targetVersion = "1.11.8";
+  public const string PLUGIN_GUID = "0gelbi.faster-world-extra", PLUGIN_NAME = "Faster World Extra", PLUGIN_VERSION = "1.0.2", targetVersion = "1.11.8";
   public static bool isInit = false, gslEnabled = false;
   public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
@@ -99,14 +99,15 @@ public class Plugin : BaseUnityPlugin
         ReplaceFL = (type, methodName, parameterTypes, target) => new NativeDetour(type.GetMethod(methodName, flags, null, parameterTypes, null), target.Method);
       }
 
-      #region 1.0.1
+      #region 1.0.2
 
       ReplaceF(typeof(WorldLoader), "FindRoomFile", M_Assets.WorldLoader_FindRoomFile);
       ReplaceFL(typeof(AssetManager), "ResolveFilePath", [typeof(string), typeof(bool), typeof(bool)], M_Assets.AssetManager_ResolveFilePath);
 
-      ReplaceF(typeof(BackwardsCompability), "IndexMapWorld", M_Assets.BackwardsCompability_IndexMapWorld);
-
       IL.ModManager.RefreshModsLists += M_Assets.ModManager_RefreshModsLists;
+      On.RainWorld.ctor += M_Assets.RainWorld_ctor;
+      On.ModManager.ModApplyer.ctor += M_Assets.ModApplyer_ctor;
+      On.StaticWorld.InitStaticWorld += M_Assets.StaticWorld_InitStaticWorld;
       On.RoomSettings.Save_string_bool += M_Assets.RoomSettings_Save_string_bool;
 
       #endregion
