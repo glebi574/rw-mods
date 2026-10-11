@@ -1,4 +1,6 @@
 ﻿using RWCustom;
+using System.Security.Cryptography;
+using System.Text;
 using UnityEngine;
 
 namespace faster_world;
@@ -205,5 +207,35 @@ public static class M_Math
         }
       }
     }
+  }
+
+  public static float Mathf_InverseLerp(float a, float b, float value)
+  {
+    if (a == b)
+      return 0f;
+    if (b > a)
+    {
+      if (value >= b)
+        return 1f;
+      if (a >= value)
+        return 0f;
+    }
+    else
+    {
+      if (b >= value)
+        return 1f;
+      if (value >= a)
+        return 0f;
+    }
+    return (value - a) / (b - a);
+  }
+
+  public static string Custom_Md5Sum(string strToEncrypt)
+  {
+    byte[] hash = new MD5CryptoServiceProvider().ComputeHash(ConcatArrays(Encoding.UTF8.GetBytes(strToEncrypt), _checksumSalt));
+    StringBuilder sb = new(32);
+    foreach (byte b in hash)
+      sb.Append(b.ToString("x2"));
+    return sb.ToString();
   }
 }

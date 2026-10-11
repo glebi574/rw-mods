@@ -170,11 +170,11 @@ public static class M_ModManager
     {
       mod.checksumChanged = checksum != modChecksum;
       if (mod.checksumChanged)
-        Custom.LogImportant(["MOD CHECKSUM CHANGED FOR", mod.name, ": Was", modChecksum, ", is now", checksum]);
+        CLogImportant(["MOD CHECKSUM CHANGED FOR ", mod.name, ": Was ", modChecksum, ", is now ", checksum]);
     }
     else
     {
-      Custom.LogImportant(["MOD CHECKSUM DID NOT EXIST FOR", mod.name, ", NEWLY INSTALLED?"]);
+      CLogImportant(["MOD CHECKSUM DID NOT EXIST FOR ", mod.name, ", NEWLY INSTALLED?"]);
       mod.checksumChanged = true;
     }
     mod.checksum = checksum;
