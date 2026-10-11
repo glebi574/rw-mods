@@ -10,7 +10,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 

@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 

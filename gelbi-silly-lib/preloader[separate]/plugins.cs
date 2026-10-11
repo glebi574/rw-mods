@@ -1,11 +1,11 @@
 ﻿using BepInEx;
+using gelbi_silly_lib.MonoModUtils;
 using gelbi_silly_lib.Other;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 
@@ -28,6 +28,10 @@ public static class PluginUtils
   /// </summary>
   public static Dictionary<Assembly, Dictionary<string, PluginData>> plugins = [];
   /// <summary>
+  /// Dictionary with GUID - plugin pairs
+  /// </summary>
+  public static Dictionary<string, PluginData> pluginMap = [];
+  /// <summary>
   /// Dictionary with active assemblies linked to mod folder names
   /// </summary>
   public static Dictionary<string, HashSet<Assembly>> modAssemblies = [];
@@ -42,9 +46,16 @@ public static class PluginUtils
   {
     if (orig(plugin) is not BepInPlugin metadata)
       return null;
-    Assembly asm = plugin.GetType().Assembly;
-    modAssemblies.AddOrCreateWith(GetModFolderName(asm), asm);
-    plugins.AddOrCreateWith(asm, metadata.GUID, new(metadata, (BaseUnityPlugin)plugin));
+    try
+    {
+      Assembly asm = plugin.GetType().Assembly;
+      modAssemblies.AddOrCreateWith(GetModFolderName(asm), asm);
+      plugins.AddOrCreateWith(asm, metadata.GUID, pluginMap[metadata.GUID] = new(metadata, (BaseUnityPlugin)plugin));
+    }
+    catch (Exception e)
+    {
+      LogError(e);
+    }
     return metadata;
   }
 

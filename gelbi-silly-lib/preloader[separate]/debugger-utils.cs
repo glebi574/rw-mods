@@ -1,4 +1,5 @@
 ﻿using gelbi_silly_lib.MonoModUtils;
+using gelbi_silly_lib.Other;
 using gelbi_silly_lib.ReflectionUtils;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -10,7 +11,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib.Debugging;
 
@@ -60,7 +60,7 @@ public class ResolvedTraceMethod(MethodBase method, int offset, ResolvedTraceMet
   /// Internal name of native method if frame is resolved to it.
   /// </summary>
   public string additionalData = additionalData;
-  public Flags flags = flags;
+  public Flags flags = method != null && method.IsILModified ? (flags == Flags.DynamicOrig ? Flags.ILModified : flags | Flags.ILModified) : flags;
 
   public bool IsHook => (flags & Flags.Hook) != 0;
   public bool IsInlinedHook => (flags & Flags.InlinedHook) != 0;
@@ -80,9 +80,10 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
 
   public static Dictionary<int, TrackedIssue> indexedIssues = [];
   public static Dictionary<MethodBase, TrackedIssue> issues = [];
+  readonly static Dictionary<Type, List<Func<object, string>>> parsers = [];
   public static HashSet<MethodBase> hookedMethods = [], resolvedIssues = [];
-  public static HashSet<uint> loggedMethods = [];
   public static int issueCounter = 0;
+  public static uint lastException1 = 0, lastException2 = 0;
 
   public DebuggingState state = DebuggingState.Wait;
   public int dismissCounter = 0, failureCounter = 0, targetMethodIndex = 0, id = issueCounter;
@@ -122,12 +123,19 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
       ilp.InsertBefore(i, ilp.Create(OpCodes.Ldc_I4, index++));
       ilp.InsertBefore(i, ilp.Create(OpCodes.Call, methodRef));
     }
-    if (targetMethodIndex == 0)
-    {
-      Instruction i = il.Instrs[0];
-      ilp.InsertBefore(i, ilp.Create(OpCodes.Ldc_I4, id));
-      ilp.InsertBefore(i, ilp.Create(OpCodes.Call, il.Module.ImportReference(m_SetCapturedFlag)));
-    }
+    if (targetMethodIndex != 0)
+      return;
+    Instruction first = il.Instrs[0];
+    ilp.InsertBefore(first, ilp.Create(OpCodes.Ldc_I4, id));
+    ilp.InsertBefore(first, ilp.Create(OpCodes.Call, il.Module.ImportReference(m_SetCapturedFlag)));
+  }
+
+  public static void AddParser(Type type, Func<object, string> parser) => parsers.AddOrCreateWith(type, parser);
+
+  public static void AddParser(Type[] types, Func<object, string> parser)
+  {
+    foreach (Type type in types)
+      parsers.AddOrCreateWith(type, parser);
   }
 
   /// <summary>
@@ -145,10 +153,16 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
       builder.Append('[');
       if (array.Length > 32 || array.Length == 0)
         builder.Append('<').Append(array.Length).Append('>');
-      else if (type.GetElementType().IsPrimitive || type.GetElementType().IsEnum || type == typeof(string[]))
+      else if (type.GetElementType().IsPrimitive || type.GetElementType().IsEnum)
       {
         foreach (object value in array)
           builder.Append(value).Append(", ");
+        builder.Length -= 2;
+      }
+      else if (type == typeof(string[]))
+      {
+        foreach (object value in array)
+          builder.Append('"').Append(value).Append("\", ");
         builder.Length -= 2;
       }
       builder.Append(']');
@@ -167,33 +181,52 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
         AppendArray(builder, array);
         return;
       }
-      else
-        switch (obj)
-        {
-          case char:
-            builder.Append($"\'{obj}\'");
-            break;
-          case string:
-            builder.Append($"\"{obj}\"");
-            break;
-          default:
-            builder.Append(obj);
-            break;
-        }
+      switch (obj)
+      {
+        case char:
+          builder.Append($"\'{obj}\'");
+          return;
+        case string:
+          builder.Append($"\"{obj}\"");
+          return;
+        default:
+          string str;
+          try
+          {
+            str = obj.ToString();
+          }
+          catch (Exception e)
+          {
+            str = $"{obj.GetType()} \\\\ Failed to parse: {(Delegate)obj.ToString} : {e.Message}";
+          }
+          builder.Append(str);
+          return;
+      }
     }
 
     AppendValue(sb, name, obj);
     Type objectType = obj.GetType();
+    StringBuilder local = null;
+
+    if (obj != null && parsers.TryGetValue(objectType, out List<Func<object, string>> objParsers))
+    {
+      local = new(64);
+      foreach (Func<object, string> parser in objParsers)
+        local.Append("  <> ").Append(parser(obj)).AppendLine();
+    }
     if (!objectType.IsArray && (!objectType.IsValueType || !objectType.IsPrimitive && !objectType.IsEnum) && obj is not Delegate)
     {
-      sb.Append(" :: {");
-      StringBuilder local = new(64);
+      local ??= new(64);
       foreach (FieldInfo field in objectType.GetFields(BFlags.anyInstance))
-        if (field.FieldType.IsArray || field.FieldType.IsPrimitive || field.FieldType.IsEnum || field.GetValue(obj) == null)
+        if (field.FieldType.IsArray || field.FieldType.IsPrimitive || field.FieldType.IsEnum || field.FieldType == typeof(string) || field.GetValue(obj) == null)
         {
           AppendValue(local, field.Name, field.GetValue(obj));
           local.AppendLine();
         }
+    }
+    if (local != null)
+    {
+      sb.Append(" :: {");
       if (local.Length < 64)
       {
         local.Replace(Environment.NewLine + ' ', ",");
@@ -347,7 +380,6 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
   /// </summary>
   public static void UpdateNoIssues()
   {
-    loggedMethods.Clear();
     foreach (MethodBase targetMethod in (List<MethodBase>)[.. issues.Keys])
     {
       TrackedIssue issue = issues[targetMethod];
@@ -356,15 +388,10 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
       issue.DisposeHooks();
       foreach (ResolvedTraceMethod method in issue.stack)
         hookedMethods.Remove(method.method);
-      if (++issue.failureCounter > 1)
-      {
-        indexedIssues.Remove(issue.id);
-        issues.Remove(targetMethod);
-        continue;
-      }
-      issue.state = DebuggingState.Wait;
-      issue.dismissCounter = 0;
-      issue.failureCounter++;
+      indexedIssues.Remove(issue.id);
+      issues.Remove(targetMethod);
+      if (issue.failureCounter == 0)
+        issues[targetMethod] = indexedIssues[issue.id] = new(issue.stack) { failureCounter = 1, id = issue.id };
     }
   }
 
@@ -385,9 +412,14 @@ public class TrackedIssue(List<ResolvedTraceMethod> resolvedTrace)
     // also prevents exception with modified methods from being logged after original one in gsl log
     uint hash = 2166136261;
     foreach (ResolvedTraceMethod method in resolvedStack)
-      hash *= (uint)method.method?.GetHashCode() ^ 16777619;
-    if (loggedMethods.Add(hash))
+      if (method.method != null)
+        hash *= (uint)method.method.GetHashCode() ^ 16777619;
+    if (lastException1 != hash && lastException2 != hash)
+    {
+      lastException2 = lastException1;
+      lastException1 = hash;
       GSLLog.GLog($"{GSLLog.TimeLabel()} {type} {e}\n");
+    }
     for (int i = resolvedStack.Count - 1; i >= 0; --i)
       if (resolvedStack[i].method == null || resolvedStack[i].method.DeclaringType == typeof(TrackedIssue) || resolvedStack[i].method.DeclaringType?.Name == "IssueResolver")
         resolvedStack.RemoveAt(i);
@@ -438,51 +470,39 @@ public static class Extensions
 
     foreach (StackFrame frame in self.GetFrames())
     {
-      string codeLocation = frame.GetFileName();
-      if (codeLocation == null)
-        codeLocation = "";
-      else
-        codeLocation = $" in {codeLocation}:{frame.GetFileLineNumber()}:{frame.GetFileColumnNumber()}";
-      if (frame.GetMethod() is MethodBase method)
-      {
-        lastMethod = method;
-        methods.Add(new(method, frame.GetILOffset(), method.IsILModified ? ResolvedTraceMethod.Flags.ILModified : ResolvedTraceMethod.Flags.Method, codeLocation));
+      MethodBase method = frame.GetMethod();
+      if (method != null && method.DeclaringType == typeof(DynamicMethodDefinition) && method.Name.StartsWith("Trampoline<"))
         continue;
+      string codeLocation = frame.GetFileName();
+      long address = frame.GetMethodAddress();
+      if (address == 0 && method != null)
+        address = (long)method.MethodHandle.GetFunctionPointer();
+      codeLocation = codeLocation == null ? "" : $" in {codeLocation}:{frame.GetFileLineNumber()}:{frame.GetFileColumnNumber()}";
+
+      if (RuntimeDetourManager.pinnedMethods.TryGetValue(address, out MethodBase pinned)
+       && RuntimeDetourManager.specificDMDMap.TryGetValue(pinned, out LinkedDMDData dmdData))
+      {
+        if (dmdData.detour is Hook hook)
+          if (lastMethod == hook.Target)
+            methods[methods.Count - 1].flags |= ResolvedTraceMethod.Flags.Hook;
+          else
+            methods.Add(new(lastMethod = hook.Target, frame.GetILOffset(), ResolvedTraceMethod.Flags.InlinedHook, codeLocation));
+        else if (dmdData.definition.OriginalMethod == null)
+        {
+          lastMethod = null;
+          methods.Add(new(((Delegate)NotAMethod_NullOriginatingDMDEncountered).Method, frame.GetILOffset(), ResolvedTraceMethod.Flags.DynamicOrig, codeLocation));
+        }
+        else
+          methods.Add(new(lastMethod = dmdData.definition.OriginalMethod, frame.GetILOffset(), ResolvedTraceMethod.Flags.DynamicOrig, codeLocation));
       }
-      if (!RuntimeDetourManager.pinnedMethods.TryGetValue(frame.GetMethodAddress(), out MethodBase pinned)
-        || !RuntimeDetourManager.specificDMDMap.TryGetValue(pinned, out LinkedDMDData dmdData))
+      else if (method != null)
+        methods.Add(new(lastMethod = method, frame.GetILOffset(), ResolvedTraceMethod.Flags.Method, codeLocation));
+      else
       {
         string name = frame.GetInternalName();
         if (name.Length > 27 && name[26] == ')')
           methods.Add(new(null, frame.GetILOffset(), ResolvedTraceMethod.Flags.Native, codeLocation, name.Substring(28)));
-        continue;
       }
-      ResolvedTraceMethod.Flags flags;
-      if (dmdData.detour is Hook hook)
-      {
-        if (lastMethod == hook.Target)
-          methods[methods.Count - 1].flags |= ResolvedTraceMethod.Flags.Hook;
-        else
-        {
-          flags = ResolvedTraceMethod.Flags.InlinedHook;
-          if (hook.Target.IsILModified)
-            flags |= ResolvedTraceMethod.Flags.ILModified;
-          methods.Add(new(hook.Target, frame.GetILOffset(), flags, codeLocation));
-        }
-        continue;
-      }
-      if (dmdData.definition.OriginalMethod == null)
-      {
-        lastMethod = null;
-        flags = ResolvedTraceMethod.Flags.DynamicOrig;
-        methods.Add(new(((Delegate)NotAMethod_NullOriginatingDMDEncountered).Method, frame.GetILOffset(), flags, codeLocation));
-        continue;
-      }
-      lastMethod = dmdData.definition.OriginalMethod;
-      flags = ResolvedTraceMethod.Flags.DynamicOrig;
-      if (dmdData.definition.OriginalMethod.IsILModified)
-        flags |= ResolvedTraceMethod.Flags.ILModified;
-      methods.Add(new(dmdData.definition.OriginalMethod, frame.GetILOffset(), flags, codeLocation));
     }
     return methods;
   }
@@ -494,10 +514,21 @@ public static class Extensions
   /// Methods are not provided for wrapper native methods. Offsets are assigned for all methods, but not all of them make sense.
   /// </summary>
   public static List<ResolvedTraceMethod> GetResolvedMethodTrace(this Exception self) => new StackTrace(self, true).GetResolvedMethodTrace();
+
+  public static Exception ExpandStackTraceToCaller(this Exception self)
+  {
+    self.Data["_gslAdditionalStackTrace"] = new StackTrace(2, true);
+    return self;
+  }
 }
 
 public static class DebuggerUtils
 {
+  static DebuggerUtils()
+  {
+    new Hook(typeof(Exception).GetMethod("ToString"), Exception_ToString); // FileNotFoundException.ToString overrides base method
+  }
+
   static string Exception_ToString(Func<Exception, string> orig, Exception self)
   {
     try
@@ -510,72 +541,35 @@ public static class DebuggerUtils
     }
   }
 
-  static DebuggerUtils()
-  {
-    new Hook(typeof(Exception).GetMethod("ToString"), Exception_ToString);
-  }
-
   /// <summary>
-  /// If possible, provides additional information about exception, that includes throwing method(exact detour target if applicable) and offset, that's omitted sometimes
+  /// Returns string with resolved current stack trace
   /// </summary>
-  public static string GetAdditionalExceptionInfo(Exception self)
-  {
-    StringBuilder sb = new();
-    StackTrace stackTrace = new(self.InnerException ?? self);
-    if (stackTrace.FrameCount == 0)
-      return "";
-    sb.Append("<thrown by ");
-    StackFrame frame = stackTrace.GetFrame(0);
-    if (frame.GetMethod() is MethodBase method)
-      sb.Append(method.GetFullSimpleName());
-    else if (RuntimeDetourManager.pinnedMethods.TryGetValue(frame.GetMethodAddress(), out MethodBase pinned))
-    {
-      if (RuntimeDetourManager.DMDOwners.TryGetValue(pinned, out IDetour idetour))
-        sb.Append(idetour.GetTarget()?.GetFullSimpleName() ?? "(???)");
-      else
-      {
-        string def = pinned.ToString();
-        int nameStart = def.IndexOf('<'), nameEnd = def.LastIndexOf('>');
-        if (nameStart != -1 && nameStart < nameEnd && nameEnd < def.Length)
-          sb.Append(def.Substring(nameStart + 1, nameEnd - nameStart - 1));
-        else
-          sb.Append("(orig described by stack frame)");
-      }
-    }
-    else
-      sb.Append("(unknown method)");
-    sb.Append(" after ");
-    int offset = frame.GetILOffset();
-    if (offset < 0)
-      sb.Append("(unknown offset)");
-    else
-      sb.Append("IL_").Append(offset.ToString("X4"));
-    return sb.Append("> ").ToString();
-  }
+  public static string StackTrace => GetSimplifiedStackTrace(new(true));
+
+  public static string GetSimplifiedStackTrace(StackTrace stackTrace, int alignment = 0) => GetSimplifiedStackTrace(stackTrace, ref alignment);
 
   /// <summary>
   /// Returns string with resolved stack trace and additional description for some methods
   /// </summary>
-  public static string GetSimplifiedStackTrace(StackTrace stackTrace)
+  public static string GetSimplifiedStackTrace(StackTrace stackTrace, ref int alignment)
   {
     StringBuilder sb = new(512);
     List<(string prefix, string method)> lines = [];
-    int maxPrefix = 0;
 
-    void AddLine(string prefix, string method)
+    void AddLine(string prefix, string method, ref int alignment)
     {
       lines.Add((prefix, method));
-      if (maxPrefix < prefix.Length)
-        maxPrefix = prefix.Length;
+      if (alignment < prefix.Length)
+        alignment = prefix.Length;
     }
 
     foreach (ResolvedTraceMethod resolvedMethod in stackTrace.GetResolvedMethodTrace())
     {
       string offset = " at IL_" + resolvedMethod.offset.ToString("X4");
       if (resolvedMethod.flags == 0)
-        AddLine("", resolvedMethod.method.GetSimpleName() + offset + resolvedMethod.codeLocation);
+        AddLine("", resolvedMethod.method.GetSimpleName() + offset + resolvedMethod.codeLocation, ref alignment);
       else if (resolvedMethod.IsNative)
-        AddLine("<native>", resolvedMethod.additionalData + resolvedMethod.codeLocation);
+        AddLine("<native>", resolvedMethod.additionalData + resolvedMethod.codeLocation, ref alignment);
       else
       {
         string label = "", name = resolvedMethod.method.GetSimpleName();
@@ -594,12 +588,12 @@ public static class DebuggerUtils
             label = "IL*";
           else
             label += "\\IL*";
-        AddLine($"<{label}>", name + resolvedMethod.codeLocation);
+        AddLine($"<{label}>", name + resolvedMethod.codeLocation, ref alignment);
       }
     }
 
     foreach ((string prefix, string method) in lines)
-      sb.Append(prefix.PadLeft(maxPrefix)).Append(" | ").AppendLine(method);
+      sb.Append(prefix.PadLeft(alignment)).Append(" | ").AppendLine(method);
 
     return sb.ToString();
   }
@@ -611,8 +605,17 @@ public static class DebuggerUtils
   {
     StringBuilder sb = new(512);
     sb.Append("! <simplified> ").Append(e.GetType().GetSimpleName()).Append(": ").AppendLine(e.Message.TrimEnd());
+    int alignment = 0;
     if (e.InnerException is Exception inner)
-      sb.Append(GetSimplifiedStackTrace(new(inner, true))).AppendLine("--- End of inner exception stack trace ---");
-    return sb.Append(GetSimplifiedStackTrace(new(e, true))).ToString();
+      sb.Append("! ---> ").Append(inner.GetType().GetSimpleName()).Append(": ").AppendLine(inner.Message.TrimEnd()).Append(GetSimplifiedStackTrace(new(inner, true), ref alignment)).AppendLine("--- End of inner exception stack trace ---");
+    sb.Append(GetSimplifiedStackTrace(new(e, true), ref alignment));
+    if (e.Data.Contains("_gslAdditionalStackTrace"))
+    {
+      int i;
+      if ((i = sb.LastIndexOf('\n', -3)) != -1 && (i = sb.IndexOf('|', i)) != -1)
+        sb.Replace('|', '>', i, 1);
+      sb.AppendLine(GetSimplifiedStackTrace((StackTrace)e.Data["_gslAdditionalStackTrace"], ref alignment));
+    }
+    return sb.ToString();
   }
 }

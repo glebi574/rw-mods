@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 
@@ -17,17 +16,6 @@ public class WriterThread
   public readonly AutoResetEvent signal = new(false);
   public Thread thread;
   public bool running = true;
-
-  static WriterThread()
-  {
-    AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
-  }
-
-  static void CurrentDomain_ProcessExit(object sender, EventArgs e)
-  {
-    foreach (WriterThread thread in threads)
-      thread.Close();
-  }
 
   /// <summary>
   /// Constructs and starts writer thread

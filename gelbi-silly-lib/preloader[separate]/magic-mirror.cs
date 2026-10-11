@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib.ReflectionUtils;
 
@@ -58,7 +57,7 @@ public static class ReflectionUtils
     { typeof(ulong), "ulong" },
     { typeof(float), "float" },
     { typeof(double), "double" },
-    { typeof(decimal), "decimal" }
+    { typeof(decimal), "Decimal" } // Mono.Cecil ate decimal
   };
 
   /// <summary>
@@ -91,7 +90,7 @@ public static class Extensions
   /// <summary>
   /// Invokes class constructor of provided type
   /// </summary>
-  public static void RunClassConstructor(this Type type) => System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(type.TypeHandle);
+  public static void RunClassConstructor(this Type self) => System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(self.TypeHandle);
 
   /// <summary>
   /// Checks if type inherits other generic type
@@ -101,7 +100,7 @@ public static class Extensions
   /// <summary>
   /// Returns effective return type of method/constructor
   /// </summary>
-  public static Type GetReturnType(this MethodBase methodBase) => methodBase switch
+  public static Type GetReturnType(this MethodBase self) => self switch
   {
     MethodInfo method => method.ReturnType,
     ConstructorInfo => typeof(void),
@@ -111,11 +110,23 @@ public static class Extensions
   /// <summary>
   /// Returns lowest element type
   /// </summary>
-  public static Type GetBaseElementType(this Type self)
+  public static Type GetBaseElementType(this Type self) => self.IsArray || self.IsByRef || self.IsPointer ? self.GetElementType().GetBaseElementType() : self;
+
+  public static string GetArgumentName(this Type self)
   {
-    if (self.IsArray || self.IsByRef || self.IsPointer)
-      return self.GetElementType().GetBaseElementType();
-    return self;
+    if (self.IsGenericType)
+    {
+      string name = self.Name.SubstringUntil('`');
+      if (self.Namespace == "System")
+        switch (name)
+        {
+          case "Nullable":
+            return self.GetGenericArguments()[0].GetArgumentName() + "?";
+          case "ValueTuple":
+            return string.Concat("(", self.GetGenericArguments().GetFormattedTypes(), ")");
+        }
+    }
+    return self.GetSimpleName();
   }
 
   /// <summary>
@@ -125,12 +136,9 @@ public static class Extensions
   {
     if (self.Length == 0)
       return "";
-    StringBuilder sb = new(self[0].GetSimpleName());
+    StringBuilder sb = new(self[0].GetArgumentName());
     for (int i = 1; i < self.Length; ++i)
-    {
-      sb.Append(", ");
-      sb.Append(self[i].GetSimpleName());
-    }
+      sb.Append(", ").Append(self[i].GetArgumentName());
     return sb.ToString();
   }
 
@@ -141,12 +149,9 @@ public static class Extensions
   {
     if (self.Length == 0)
       return "";
-    StringBuilder sb = new(self[0].ParameterType.GetSimpleName());
+    StringBuilder sb = new(self[0].ParameterType.GetArgumentName());
     for (int i = 1; i < self.Length; ++i)
-    {
-      sb.Append(", ");
-      sb.Append(self[i].ParameterType.GetSimpleName());
-    }
+      sb.Append(", ").Append(self[i].ParameterType.GetArgumentName());
     return sb.ToString();
   }
 
@@ -158,28 +163,23 @@ public static class Extensions
     if (ReflectionUtils.baseTypeNameAtlas.TryGetValue(self, out string name))
       return name;
     if (self.IsArray)
-      return $"{self.GetElementType().GetSimpleName()}[{new string(',', self.GetArrayRank() - 1)}]";
+      return string.Concat(self.GetElementType().GetSimpleName(), "[", new string(',', self.GetArrayRank() - 1), "]");
     if (self.IsByRef)
-      return $"{self.GetElementType().GetSimpleName()}&";
+      return self.GetElementType().GetSimpleName() + "&";
     if (self.IsPointer)
-      return $"{self.GetElementType().GetSimpleName()}*";
+      return self.GetElementType().GetSimpleName() + "*";
     if (self.IsGenericParameter)
       return self.Name;
     if (!self.IsGenericType)
     {
       if (self.DeclaringType == null)
         return self.Name;
-      return $"{self.DeclaringType.GetSimpleName()}.{self.Name}";
+      return string.Concat(self.DeclaringType.GetSimpleName(), ".", self.Name);
     }
-    if (self.Namespace == "System")
-      if (self.Name.StartsWith("Nullable") && self != typeof(Nullable<>))
-        return $"{self.GenericTypeArguments[0].GetSimpleName()}?";
-      else if (self.Name.StartsWith("ValueTuple") && self != typeof(ValueTuple<>))
-        return $"({self.GenericTypeArguments.GetFormattedTypes()})";
-
-    if (self.IsGenericTypeDefinition)
-      return $"{self.Name.SubstringUntil('`')}<{self.GetGenericArguments().GetFormattedTypes()}>";
-    return $"{self.Name.SubstringUntil('`')}<{self.GetGenericArguments().GetFormattedTypes()}>";
+    name = self.Name.SubstringUntil('`');
+    if (self.DeclaringType == null)
+      return string.Concat(name, "<", self.GetGenericArguments().GetFormattedTypes(), ">");
+    return string.Concat(self.DeclaringType.GetSimpleName(), ".", name, "<", self.GetGenericArguments().GetFormattedTypes(), ">");
   }
 
   /// <summary>
@@ -189,56 +189,52 @@ public static class Extensions
   {
     if (self.Namespace == null || ReflectionUtils.baseTypeNameAtlas.ContainsKey(self.GetBaseElementType()))
       return self.GetSimpleName();
-    return self.Namespace + '.' + self.GetSimpleName();
+    return string.Concat(self.Namespace, ".", self.GetSimpleName());
   }
 
   /// <summary>
   /// Returns field definition similar to how it'd be written in c#
   /// </summary>
-  public static string GetSimpleName(this FieldInfo field)
+  public static string GetSimpleName(this FieldInfo self)
   {
-    return $"{field.FieldType.GetSimpleName()} {field.DeclaringType.GetSimpleName()}.{field.Name}";
+    return $"{self.FieldType.GetArgumentName()} {self.DeclaringType.GetSimpleName()}.{self.Name}";
   }
 
   /// <summary>
   /// Returns method definition similar to how it'd be written in c#
   /// </summary>
-  public static string GetSimpleName(this MethodInfo method)
+  public static string GetSimpleName(this MethodInfo self)
   {
-    return $"{method.ReturnType.GetSimpleName()} {method.GetFullSimpleName()}({method.GetParameters().GetFormattedParameterTypes()})";
+    return $"{self.ReturnType.GetArgumentName()} {self.GetFullSimpleName()}({self.GetParameters().GetFormattedParameterTypes()})";
   }
 
   /// <summary>
   /// Returns constructor definition similar to how it'd be written in c#
   /// </summary>
-  public static string GetSimpleName(this ConstructorInfo method)
+  public static string GetSimpleName(this ConstructorInfo self)
   {
-    return $"void {method.GetFullSimpleName()}({method.GetParameters().GetFormattedParameterTypes()})";
+    return $"void {self.GetFullSimpleName()}({self.GetParameters().GetFormattedParameterTypes()})";
   }
 
   /// <summary>
   /// Returns method definition similar to how it'd be written in c# (if possible)
   /// </summary>
-  public static string GetSimpleName(this MethodBase method)
+  public static string GetSimpleName(this MethodBase self) => self switch
   {
-    if (method is MethodInfo methodInfo)
-      return methodInfo.GetSimpleName();
-    if (method is ConstructorInfo constructorInfo)
-      return constructorInfo.GetSimpleName();
-    return method.ToString();
-  }
+    MethodInfo methodInfo => methodInfo.GetSimpleName(),
+    ConstructorInfo constructorInfo => constructorInfo.GetSimpleName(),
+    _ => self.ToString()
+  };
 
   /// <summary>
   /// Returns full method name with declaring type definition similar to how it'd be initially written in c#
   /// </summary>
-  public static string GetFullSimpleName(this MethodBase method)
+  public static string GetFullSimpleName(this MethodBase self)
   {
-    StringBuilder sb = new(64);
-    if (method.DeclaringType?.Namespace != null)
-      sb.Append(method.DeclaringType.Namespace).Append('.');
-    if (method.DeclaringType != null)
-      sb.Append(method.DeclaringType.GetSimpleName()).Append('.');
-    sb.Append(method.Name);
-    return sb.ToString();
+    if (self.DeclaringType == null)
+      return self.Name;
+    if (self.DeclaringType.Namespace == null)
+      return string.Concat(self.DeclaringType.GetSimpleName(), ".", self.Name);
+    return new StringBuilder(64).Append(self.DeclaringType.Namespace).Append('.').Append(self.DeclaringType.GetSimpleName()).Append('.').Append(self.Name).ToString();
   }
 }

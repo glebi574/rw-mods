@@ -31,6 +31,10 @@ public static class ModUtils
   /// Saved data manager, mainly containing dictionary with folder name - previous registered mod version pairs
   /// </summary>
   public static SimpleSavedDataHandler previousModVersions = new(["gelbi"], "previous-mod-versions");
+  /// <summary>
+  /// IDs of built-in mods and DLCs
+  /// </summary>
+  public static readonly HashSet<string> baseMods = ["devtools", "rwremix", "expedition", "jollycoop", "moreslugcats", "watcher"];
   public static int longestFolderName = 1;
 
   internal static ModManager.Mod ModManager_LoadModFromJson(On.ModManager.orig_LoadModFromJson orig, RainWorld rainWorld, string basepath, string modpath)
@@ -85,9 +89,9 @@ public static class ModUtils
   {
     List<string> paths = new(3);
     string path;
-    if (File.Exists(path = Path.Combine(self.path, "v" + GSLPUtils.gameVersion, localPath)))
+    if (self.hasTargetedVersionFolder && File.Exists(path = Path.Combine(self.path, GSLPUtils.targetVersion, localPath)))
       paths.Add(path);
-    if (File.Exists(path = Path.Combine(self.path, "newest", localPath)))
+    if (self.hasNewestFolder && File.Exists(path = Path.Combine(self.path, "newest", localPath)))
       paths.Add(path);
     if (File.Exists(path = Path.Combine(self.path, localPath)))
       paths.Add(path);
@@ -102,13 +106,41 @@ public static class ModUtils
   {
     List<string> paths = new(3);
     string path;
-    if (Directory.Exists(path = Path.Combine(self.path, "v" + GSLPUtils.gameVersion, localPath)))
+    if (self.hasTargetedVersionFolder && Directory.Exists(path = Path.Combine(self.path, GSLPUtils.targetVersion, localPath)))
       paths.Add(path);
-    if (Directory.Exists(path = Path.Combine(self.path, "newest", localPath)))
+    if (self.hasNewestFolder && Directory.Exists(path = Path.Combine(self.path, "newest", localPath)))
       paths.Add(path);
     if (Directory.Exists(path = Path.Combine(self.path, localPath)))
       paths.Add(path);
     return [.. paths];
+  }
+
+  /// <summary>
+  /// Returns file path for files that exist at specified local path including versioned folders in order:
+  /// folder for current version, "newest" folder, mod folder itself
+  /// </summary>
+  public static string GetVersionedFile(this ModManager.Mod self, string localPath)
+  {
+    string path;
+    if (self.hasTargetedVersionFolder && File.Exists(path = Path.Combine(self.path, GSLPUtils.targetVersion, localPath))
+     || self.hasNewestFolder && File.Exists(path = Path.Combine(self.path, "newest", localPath))
+     || File.Exists(path = Path.Combine(self.path, localPath)))
+      return path;
+    return null;
+  }
+
+  /// <summary>
+  /// Returns directory path for directories that exist at specified local path including versioned folders in order:
+  /// folder for current version, "newest" folder, mod folder itself
+  /// </summary>
+  public static string GetVersionedDirectory(this ModManager.Mod self, string localPath)
+  {
+    string path;
+    if (self.hasTargetedVersionFolder && Directory.Exists(path = Path.Combine(self.path, GSLPUtils.targetVersion, localPath))
+     || self.hasNewestFolder && Directory.Exists(path = Path.Combine(self.path, "newest", localPath))
+     || Directory.Exists(path = Path.Combine(self.path, localPath)))
+      return path;
+    return null;
   }
 
   /// <summary>
@@ -159,13 +191,19 @@ public static class ModUtils
   public static string GetFullModInfo(this ModManager.Mod self)
   {
     string folderName = Path.GetFileName(self.path);
+    char[] tag = [' ', ' ', ' '];
+    if (self.modifiesRegions)
+      tag[1] = 'W';
+    if (Directory.Exists(Path.Combine(self.path, "modify")))
+      tag[2] = 'M';
     if (!PluginUtils.modAssemblies.TryGetValue(folderName, out HashSet<Assembly> assemblies))
-      return $"[{Directory.GetParent(self.path).Name, 6}\\{folderName}".PadRight(longestFolderName + 8) + $" | {self.MetadataToString()} : <No active plugins>]";
+      return $"[{Directory.GetParent(self.path).Name, 6}\\{folderName}".PadRight(longestFolderName + 8) + $" |{string.Join("", tag)}| {self.MetadataToString()} : <<No active plugins>>]";
+    tag[0] = 'P';
     StringBuilder sb = new(128);
     sb.Append('[').Append(Directory.GetParent(self.path).Name.PadLeft(6)).Append('\\').Append(folderName);
     if (sb.Length < longestFolderName + 8)
       sb.Append(' ', longestFolderName - sb.Length + 8);
-    sb.Append(" | ").Append(self.MetadataToString()).Append(" | ");
+    sb.Append(" |").Append(string.Join("", tag)).Append("| ").Append(self.MetadataToString()).Append(" | ");
     foreach (Assembly asm in assemblies)
     {
       sb.Append(asm.GetName().Name);

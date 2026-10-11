@@ -8,6 +8,7 @@ using MonoMod.Cil;
 using RWCustom;
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace gelbi_silly_lib;
 
@@ -17,6 +18,7 @@ public class GSLOIBinder(GSLSettingsManager manager, PluginInterface oi) : BaseO
   {
     BaseLoad(data);
     oi.wrapHooks.Value = manager.wrapHooks;
+    oi.wrapPluginInit.Value = manager.wrapPluginInit;
     oi.noUpdateDisable.Value = manager.noUpdateDisable;
     oi.disableEOS.Value = manager.disableEOS;
     oi.biggerErrorBox.Value = manager.biggerErrorBox;
@@ -25,6 +27,7 @@ public class GSLOIBinder(GSLSettingsManager manager, PluginInterface oi) : BaseO
   public override void RemixSave()
   {
     Data["wrapHooks"] = oi.wrapHooks.Value;
+    Data["wrapPluginInit"] = oi.wrapPluginInit.Value;
     Data["noUpdateDisable"] = oi.noUpdateDisable.Value;
     Data["disableEOS"] = oi.disableEOS.Value;
     Data["biggerErrorBox"] = oi.biggerErrorBox.Value;
@@ -45,6 +48,7 @@ public class Plugin : BaseUnityPlugin
       SetImplementation(Logger.LogInfo, Logger.LogMessage, Logger.LogWarning, Logger.LogError, Logger.LogFatal, Logger.LogDebug, true);
 
       IssueResolver.ApplyHooks();
+      Application.quitting += GSLPUtils.InvokeOnExit;
       On.Futile.ctor += Futile_ctor;
       On.RainWorld.OnModsInit += RainWorld_OnModsInit;
       On.OptionInterface._LoadConfigFile += OptionInterface__LoadConfigFile;
@@ -115,18 +119,16 @@ public class Plugin : BaseUnityPlugin
     ILCursor c = new(il);
 
     if (c.TryGotoNext(i => i.OpCode == OpCodes.Ble))
-    {
       c.Emit(OpCodes.Pop)
        .Emit(OpCodes.Ldc_I4, int.MaxValue);
-    }
   }
 
   static void DialogBoxNotify_ctor(On.Menu.DialogBoxNotify.orig_ctor orig, DialogBoxNotify self, Menu.Menu menu, MenuObject owner, string text, string signalText, UnityEngine.Vector2 pos, UnityEngine.Vector2 size, bool forceWrapping)
   {
-    if (signalText != "AFTERERROR")
+    if (signalText != "AFTERERROR" && signalText != "ERROR")
       goto _e;
     LogError("DialogBoxNotify with error message was instantiated: " + text);
-    if (!pluginInterface.biggerErrorBox.Value)
+    if (!GSLSettings.instance.biggerErrorBox)
       goto _e;
     pos.x = 40f;
     pos.y = 40f;
@@ -151,6 +153,7 @@ public class Plugin : BaseUnityPlugin
     try
     {
       DetourUtils.newHookRND(ModManager.LoadModFromJson, ModUtils.ModManager_LoadModFromJson);
+      GSLTools.Setup();
     }
     catch (Exception e)
     {
@@ -169,10 +172,9 @@ public class Plugin : BaseUnityPlugin
     try
     {
       MainMenuHooks.Apply();
-      AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
+      GSLPUtils.OnExit += OnExit;
 
-      pluginInterface = new();
-      MachineConnector.SetRegisteredOI(Patcher.PLUGIN_GUID, pluginInterface);
+      MachineConnector.SetRegisteredOI(Patcher.PLUGIN_GUID, pluginInterface = new());
       new GSLOIBinder(GSLSettings.instance, pluginInterface);
 
       if (ModManager.ActiveMods.Count == 0)
@@ -182,19 +184,21 @@ public class Plugin : BaseUnityPlugin
         GSLLog.GLog();
         foreach (ModManager.Mod mod in ModManager.ActiveMods)
           GSLLog.GLog(mod.GetSimpleLabel());
-        GSLLog.GLog(new string(' ', Math.Max(0, ModUtils.longestFolderName - 6)) + "(source\\folder | mod metadata | assemblyN{<plugin metadataN : plugin name>})");
+        GSLLog.GLog(new string(' ', Math.Max(0, ModUtils.longestFolderName - 6)) + "(source\\folder |tag| mod metadata | assemblyN{<plugin metadataN : plugin name>})");
         foreach (ModManager.Mod mod in ModManager.ActiveMods)
           GSLLog.GLog(ModUtils.GetFullModInfo(mod));
         GSLLog.GLog();
       }
+      //_Tests.Run();
     }
     catch (Exception e)
     {
       LogError(e);
     }
+    GSLTools.OnModsInit();
   }
 
-  static void CurrentDomain_ProcessExit(object sender, EventArgs e)
+  static void OnExit()
   {
     foreach (KeyValuePair<string, ModManager.Mod> mod in ModUtils.mods)
       ModUtils.previousModVersions.data[mod.Key] = mod.Value.version;

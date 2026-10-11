@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib.Json;
 

@@ -1,7 +1,6 @@
 ﻿using RWCustom;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 
 namespace gelbi_silly_lib;
 
@@ -25,6 +24,55 @@ public static class FileUtils
     /// Directory at path [with given search options] exists, but doesn't contain any files with required extension
     /// </summary>
     NoFilesWithExtension
+  }
+
+  /// <summary>
+  /// Returns list with all files, local path of which matches specified one, relative to StreamingAssets, mergedmods and mod folders with their versioned paths
+  /// </summary>
+  /// <param name="path">Path to match</param>
+  /// <param name="moddedOnly">If <c>true</c>, doesn't check StreamingAssets and mergedmods</param>
+  /// <returns></returns>
+  public static List<string> ResolveAllFilePaths(string path, bool moddedOnly = false)
+  {
+    path = path.Replace('/', Path.DirectorySeparatorChar).ToLowerInvariant();
+    List<string> paths = [];
+    foreach (ModManager.Mod mod in ModManager.ActiveMods)
+      foreach (string versionedPath in mod.GetVersionedFiles(path))
+        paths.Add(versionedPath);
+    if (!moddedOnly)
+    {
+      string localPath;
+      if (File.Exists(localPath = Path.Combine(Custom.rootFolderDirectory, "mergedmods", path)))
+        paths.Add(localPath);
+      if (File.Exists(localPath = Path.Combine(Custom.rootFolderDirectory, path)))
+        paths.Add(localPath);
+    }
+    return paths;
+  }
+
+  /// <summary>
+  /// Returns list with all files, local path of which matches specified one, relative to StreamingAssets, mergedmods and mod folders with their versioned paths
+  /// <para>Only single file with highest priority will be added per mod</para>
+  /// </summary>
+  /// <param name="path">Path to match</param>
+  /// <param name="moddedOnly">If <c>true</c>, doesn't check StreamingAssets and mergedmods</param>
+  /// <returns></returns>
+  public static List<string> ResolveVersionedFilePaths(string path, bool moddedOnly = false)
+  {
+    path = path.Replace('/', Path.DirectorySeparatorChar).ToLowerInvariant();
+    List<string> paths = [];
+    foreach (ModManager.Mod mod in ModManager.ActiveMods)
+      if (mod.GetVersionedFile(path) is string versionedPath)
+        paths.Add(versionedPath);
+    if (!moddedOnly)
+    {
+      string localPath;
+      if (File.Exists(localPath = Path.Combine(Custom.rootFolderDirectory, "mergedmods", path)))
+        paths.Add(localPath);
+      if (File.Exists(localPath = Path.Combine(Custom.rootFolderDirectory, path)))
+        paths.Add(localPath);
+    }
+    return paths;
   }
 
   /// <summary>
@@ -70,7 +118,7 @@ public static class FileUtils
         }
       }
     }
-    opResult = directoryExists ? (paths.Any() ? Result.Success : Result.NoFiles) : Result.NoDirectory;
+    opResult = directoryExists ? (paths.Count == 0 ? Result.NoFiles : Result.Success) : Result.NoDirectory;
     return paths;
   }
 
@@ -88,8 +136,12 @@ public static class FileUtils
     List<string> paths = ListDirectory(path, out opResult, false, includeDuplicates, moddedOnly);
     if (opResult == Result.Success)
     {
-      paths = [.. paths.Where(p => p.EndsWith(extension))];
-      if (!paths.Any())
+      List<string> pathsWithExtension = [];
+      foreach (string existingPath in paths)
+        if (existingPath.EndsWith(extension))
+          pathsWithExtension.Add(existingPath);
+      paths = pathsWithExtension;
+      if (paths.Count == 0)
         opResult = Result.NoFilesWithExtension;
     }
     return paths;

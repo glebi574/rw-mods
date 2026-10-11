@@ -1,4 +1,5 @@
 ﻿global using static gelbi_silly_lib.LogWrapper;
+using gelbi_silly_lib.MonoModUtils;
 using gelbi_silly_lib.ReflectionUtils;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -10,20 +11,21 @@ namespace gelbi_silly_lib;
 
 public static class Patcher
 {
-  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.1.5";
+  public const string PLUGIN_GUID = "0gelbi.silly-lib", PLUGIN_NAME = "gelbi's Silly Lib", PLUGIN_VERSION = "1.2.0";
 
   public static void Initialize(params Type[] modules)
   {
     Stopwatch start = Stopwatch.StartNew(), moduleStart = Stopwatch.StartNew();
     GSLLog.GLog();
     Console.WriteLine($"gelbi-silly-lib-preloader {PLUGIN_VERSION} ♥");
+    GSLLog.writer.Write("Initializing ");
     foreach (Type module in modules)
     {
       moduleStart.Restart();
       module.RunClassConstructor();
-      GSLLog.GLog($"Initialized {module.Name} in {moduleStart.ElapsedMilliseconds}ms");
+      GSLLog.writer.Write($"{module.Name}[{moduleStart.ElapsedMilliseconds}ms] ");
     }
-    GSLLog.GLog($"Finished silly features initialization in {start.ElapsedMilliseconds}ms\n");
+    GSLLog.GLog($"\nFinished silly features initialization in {start.ElapsedMilliseconds}ms");
   }
 
   public static IEnumerable<string> TargetDLLs
@@ -31,7 +33,6 @@ public static class Patcher
     get
     {
       Initialize([
-        typeof(OptimizedImplementation.SillyOptimizations),
         typeof(SavedDataManager),
         typeof(GSLSettings),
         typeof(RuntimeDetourManager),
@@ -44,9 +45,15 @@ public static class Patcher
         typeof(PluginUtils),
       ]);
 
-      GSLLog.GLog($"Game version: {GSLPUtils.gameVersion}");
       if (GSLSettings.instance.disableEOS)
         yield return "com.playeveryware.eos.core.dll";
+
+      List<string> features = [];
+      if (GSLSettings.instance.wrapHooks)
+        features.Add("hook wrapping");
+      if (GSLSettings.instance.wrapPluginInit)
+        features.Add("plugin init wrapping");
+      GSLLog.GLog($"\nGame version: {GSLPUtils.gameVersion}{(features.Count == 0 ? "" : $" \\ Features: {string.Join(", ", features)}")}");
     }
   }
 

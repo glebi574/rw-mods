@@ -5,59 +5,8 @@ using Menu.Remix.MixedUI;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
-
-public static class MainMenuHooks
-{
-  public static void Apply()
-  {
-    On.Menu.MainMenu.ctor += MainMenu_ctor;
-    On.Menu.MainMenu.Singal += MainMenu_Singal;
-    On.Menu.MainMenu.Update += MainMenu_Update;
-    On.ProcessManager.PostSwitchMainProcess += ProcessManager_PostSwitchMainProcess;
-  }
-
-  static void ProcessManager_PostSwitchMainProcess(On.ProcessManager.orig_PostSwitchMainProcess orig, ProcessManager self, ProcessManager.ProcessID ID)
-  {
-    if (self.pendingProcess == null && ID == ChangelogMenu.id)
-      self.currentMainLoop = new ChangelogMenu(self);
-    orig(self, ID);
-  }
-
-  public static SimpleButton changelogButton;
-  public static int changelogButtonColorModifier = 0;
-  static void MainMenu_ctor(On.Menu.MainMenu.orig_ctor orig, MainMenu self, ProcessManager manager, bool showRegionSpecificBkg)
-  {
-    orig(self, manager, showRegionSpecificBkg);
-    if (Plugin.pluginInterface.hideChangelogs.Value)
-      return;
-
-    changelogButton = new(self, self.pages[0], "CHANGELOGS", "_CHANGELOGS", new(self.mainMenuButtons[0].pos.x, 30f), new(self.mainMenuButtons[0].size.x, 30f));
-    self.pages[0].subObjects.Add(changelogButton);
-    self.pages[0].selectables.Add(changelogButton);
-  }
-
-  static void MainMenu_Singal(On.Menu.MainMenu.orig_Singal orig, MainMenu self, MenuObject sender, string message)
-  {
-    orig(self, sender, message);
-    if (message == "_CHANGELOGS")
-    {
-      self.PlaySound(SoundID.MENU_Switch_Page_In);
-      self.manager.RequestMainProcessSwitch(ChangelogMenu.id);
-    }
-  }
-
-  static void MainMenu_Update(On.Menu.MainMenu.orig_Update orig, MainMenu self)
-  {
-    orig(self);
-    if (!ChangelogMenu.modsUpdated || Plugin.pluginInterface.hideChangelogs.Value)
-      return;
-    float modifier = 1f - Mathf.Pow(Mathf.Sin(++changelogButtonColorModifier / 30f), 2);
-    changelogButton.rectColor = changelogButton.labelColor = JollyCoop.JollyCustom.RGB2HSL(new(0.664f + modifier * 0.3f, 0.644f + modifier * 0.2f, 0.696f - modifier * 0.2f));
-  }
-}
 
 public class ChangelogData
 {
@@ -113,9 +62,10 @@ public class ChangelogMenu : Menu.Menu
       if (!changelog.Value.updated)
         changelogList.Add(changelog.Value);
 
-    float screenX = manager.rainWorld.options.ScreenSize.x, screenY = manager.rainWorld.options.ScreenSize.y;
+    float screenX = GSLUtils.ScreenWidth, screenY = GSLUtils.ScreenHeight;
     Page mainPage = new(this, null, "main", 0);
     pages.Add(mainPage);
+    int objStart = mainPage.subObjects.Count;
     mainPage.subObjects.Add(scene = new InteractiveMenuScene(this, mainPage, MenuScene.SceneID.Landscape_SS));
     mainPage.subObjects.Add(backObject = new SimpleButton(this, mainPage, "BACK", "BACK", new(30f, screenY - 60f), new(110f, 30f)));
     mainPage.subObjects.Add(new MenuLabel(this, mainPage, "CHANGELOGS", new(screenX / 2f, screenY - 40f), new(0f, 0f), true));
@@ -133,6 +83,7 @@ public class ChangelogMenu : Menu.Menu
     mainPage.subObjects.Add(changelog = new(this, mainPage, "", new(30f, screenY - 90f), new(0f, 0f), false));
     changelog.label.alignment = FLabelAlignment.Left;
     changelog.label._anchorY = 1f;
+    GSLUtils.CorrectForResolution(mainPage.subObjects, objStart, mainPage.subObjects.Count);
     UpdateSelectedChangelog();
   }
 

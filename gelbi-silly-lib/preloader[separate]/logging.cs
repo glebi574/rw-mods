@@ -1,7 +1,9 @@
 ﻿using BepInEx.Logging;
 using gelbi_silly_lib.MonoModUtils;
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 
 namespace gelbi_silly_lib;
 
@@ -94,8 +96,22 @@ public static class GSLLog
     {
       int newLineIndex = msg.IndexOf('\n', msg.Length / 3);
       if (newLineIndex < msg.Length - 3 &&  msg.Substring(newLineIndex + 1, 3) == "IL_")
-        msg = msg.Substring(0, newLineIndex + 1) + "  (skipped logging long method body - it's available in LogOutput.log)";
+        msg = msg.Substring(0, msg.IndexOf('\n') + 1) + "  (skipped logging long method body - it's available in LogOutput.log)";
     }
     writer.WriteLine($"{TimeLabel()} [Error:\t{self.SourceName}] {msg}");
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static void Log(this Stopwatch self, string msg = null)
+  {
+    long elapsed = self.ElapsedMilliseconds;
+    GLog(string.Concat(msg ?? self.GetHashCode().ToString("x4"), ": ", elapsed, "ms"));
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)] // >200mcs overhead otherwise anyhow
+  public static void LogPrecise(this Stopwatch self, string msg = null)
+  {
+    long elapsed = self.ElapsedTicks;
+    GLog(string.Concat(msg ?? self.GetHashCode().ToString("x4"), ": ", (elapsed * 1000.0 / Stopwatch.Frequency).ToString("0.######"), "ms"));
   }
 }

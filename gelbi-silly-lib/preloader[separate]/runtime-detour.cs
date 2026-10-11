@@ -1,4 +1,6 @@
-﻿using gelbi_silly_lib.MonoModUtils;
+﻿using gelbi_silly_lib.Debugging;
+using gelbi_silly_lib.MonoModUtils;
+using gelbi_silly_lib.OptimizedImplementation;
 using gelbi_silly_lib.Other;
 using gelbi_silly_lib.ReflectionUtils;
 using HarmonyLib;
@@ -13,7 +15,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
-using static gelbi_silly_lib.LogWrapper;
 
 namespace gelbi_silly_lib;
 
@@ -120,7 +121,7 @@ public static class RuntimeDetourManager
     }
     catch (Exception e)
     {
-      LogError($"Exception, while applying hook{{{self.GetTarget().GetFullSimpleName()}}}: {e}\n  \\ hook will be disposed");
+      LogError($"Exception, while applying hook{{{self.GetTarget().GetFullSimpleName()}{(self.GetMethod() is MethodBase method ? " @ " + method.GetFullSimpleName() : "")}}}: {e.ExpandStackTraceToCaller()}\n  \\ hook will be disposed");
       self.Dispose();
     }
   }
@@ -239,8 +240,9 @@ public static class RuntimeDetourManager
       DetourUtils.newHook<Detour>("Apply", Detour_Apply);
     }
     AddHook(initialHook, initialHook.Method, initialHook.Target);
+    typeof(SillyOptimizations).RunClassConstructor();
+    DetourUtils.newHookRND<DMDEmitDynamicMethodGenerator>("_Generate", DMDEmitDynamicMethodGenerator__Generate);
     DetourUtils.newHook<DetourRuntimeILPlatform>("Pin", DetourRuntimeILPlatform_Pin);
-    DetourUtils.newHook<DMDEmitDynamicMethodGenerator>("_Generate", DMDEmitDynamicMethodGenerator__Generate);
     new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase), typeof(NativeDetourConfig).MakeByRefType()]), NativeDetour_ctor_mmrc);
     new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase), typeof(NativeDetourConfig)]), NativeDetour_ctor_mmc);
     new Hook(typeof(NativeDetour).GetConstructor([typeof(MethodBase), typeof(MethodBase)]), NativeDetour_ctor_mm);

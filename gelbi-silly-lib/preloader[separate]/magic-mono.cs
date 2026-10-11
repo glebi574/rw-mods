@@ -8,7 +8,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
-using static gelbi_silly_lib.LogWrapper;
 using static MonoMod.Cil.ILContext;
 
 namespace gelbi_silly_lib.MonoModUtils;
@@ -50,54 +49,56 @@ public static class Extensions
     action(self);
   }
 
-  /// <summary>
-  /// Invokes expression for each type in the module and each type nested in it
-  /// </summary>
-  public static void ForEachType(this ModuleDefinition self, Action<TypeDefinition> action)
+  extension(ModuleDefinition self)
   {
-    foreach (TypeDefinition type in self.Types)
-      type.ForEach(action);
-  }
+    /// <summary>
+    /// Invokes expression for each type in the module and each type nested in it
+    /// </summary>
+    public void ForEachType(Action<TypeDefinition> action)
+    {
+      foreach (TypeDefinition type in self.Types)
+        type.ForEach(action);
+    }
 
-  /// <summary>
-  /// Returns list with all types and nested types, defined in module
-  /// </summary>
-  public static List<TypeDefinition> GetAllTypes(this ModuleDefinition self)
-  {
-    List<TypeDefinition> types = [];
-    self.ForEachType(types.Add);
-    return types;
+    /// <summary>
+    /// Returns collection with all types and nested types, defined in module
+    /// </summary>
+    public IEnumerable<TypeDefinition> AllTypes
+    {
+      get {
+        foreach (TypeDefinition type in self.Types)
+        {
+          yield return type;
+          foreach (TypeDefinition nested in type.NestedTypes)
+            yield return nested;
+        }
+      }
+    }
   }
 
   /// <summary>
   /// Returns detour method(won't work for pointer based native detours)
   /// </summary>
-  public static MethodBase GetMethod(this IDetour self)
+  public static MethodBase GetMethod(this IDetour self) => self switch
   {
-    return self switch
-    {
-      Detour detour => detour.Method,
-      Hook hook => hook.Method,
-      ILHook ilhook => ilhook.Method,
-      NativeDetour native => RuntimeDetourManager.nativeDetourMethods.TryGetValue(native, out MethodBase method) ? method : null,
-      _ => null,
-    };
-  }
+    Detour detour => detour.Method,
+    Hook hook => hook.Method,
+    ILHook ilhook => ilhook.Method,
+    NativeDetour native => RuntimeDetourManager.nativeDetourMethods.TryGetValue(native, out MethodBase method) ? method : null,
+    _ => null,
+  };
 
   /// <summary>
   /// Returns target method(won't work for detours, targeting IntPtr)
   /// </summary>
-  public static MethodBase GetTarget(this IDetour self)
+  public static MethodBase GetTarget(this IDetour self) => self switch
   {
-    return self switch
-    {
-      Detour detour => detour.Target,
-      Hook hook => hook.Target,
-      ILHook ilhook => ilhook.Manipulator.Method,
-      NativeDetour native => RuntimeDetourManager.nativeDetourTargets.TryGetValue(native, out MethodBase target) ? target : null,
-      _ => null,
-    };
-  }
+    Detour detour => detour.Target,
+    Hook hook => hook.Target,
+    ILHook ilhook => ilhook.Manipulator.Method,
+    NativeDetour native => RuntimeDetourManager.nativeDetourTargets.TryGetValue(native, out MethodBase target) ? target : null,
+    _ => null,
+  };
 
   extension(MethodBase self)
   {
@@ -171,6 +172,33 @@ public static class Extensions
       LogInfo($"{i.Offset:X4}: {i.OpCode} {i.Operand}");
   }
 
+  public static string GetArgumentName(this TypeReference self)
+  {
+    if (self.HasGenericParameters)
+    {
+      if (self.Namespace == "System")
+        switch (self.Name.SubstringUntil('`'))
+        {
+          case "Nullable":
+            return self.GenericParameters[0].GetArgumentName() + "?";
+          case "ValueTuple":
+            return string.Concat("(", self.GenericParameters.GetFormattedGenericTypes(), ")");
+        }
+    }
+    else if (self is GenericInstanceType genericInstance)
+    {
+      if (self.Namespace == "System")
+        switch (self.Name.SubstringUntil('`'))
+        {
+          case "Nullable":
+            return genericInstance.GenericArguments[0].GetArgumentName() + "?";
+          case "ValueTuple":
+            return string.Concat("(", genericInstance.GenericArguments.GetFormattedGenericTypes(), ")");
+        }
+    }
+    return self.GetSimpleName();
+  }
+
   /// <summary>
   /// Returns string, containing formatted list of generic types, presented in collection
   /// </summary>
@@ -178,12 +206,9 @@ public static class Extensions
   {
     if (self.Count == 0)
       return "";
-    StringBuilder sb = new(self[0].GetSimpleName());
+    StringBuilder sb = new(self[0].GetArgumentName());
     for (int i = 1; i < self.Count; ++i)
-    {
-      sb.Append(", ");
-      sb.Append(self[i].GetSimpleName());
-    }
+      sb.Append(", ").Append(self[i].GetArgumentName());
     return sb.ToString();
   }
 
@@ -194,78 +219,88 @@ public static class Extensions
   {
     if (self.Count == 0)
       return "";
-    StringBuilder sb = new(self[0].ParameterType.GetSimpleName());
+    StringBuilder sb = new(self[0].ParameterType.GetArgumentName());
     for (int i = 1; i < self.Count; ++i)
-    {
-      sb.Append(", ");
-      sb.Append(self[i].ParameterType.GetSimpleName());
-    }
+      sb.Append(", ").Append(self[i].ParameterType.GetArgumentName());
     return sb.ToString();
+  }
+
+  static string GetResolvedDeclarer(this TypeReference self)
+  {
+    if (!self.HasGenericParameters || self.GenericParameters.Count == 0 || self.Resolve() is not TypeDefinition type)
+      return self.GetSimpleName();
+    string name = type.Name.SubstringUntil('`');
+    if (type.DeclaringType == null)
+      return string.Concat(name, "<", type.GenericParameters.GetFormattedGenericTypes(), ">");
+    return string.Concat(type.DeclaringType.GetResolvedDeclarer(), ".", name, "<", type.GenericParameters.GetFormattedGenericTypes(), ">");
   }
 
   /// <summary>
   /// Returns type definition similar to how it'd be initially written in c# (doesn't differentiate ref/out)
   /// </summary>
-  public static string GetSimpleName(this TypeReference type)
+  public static string GetSimpleName(this TypeReference self)
   {
-    MetadataType metadataType = type.MetadataType;
+    MetadataType metadataType = self.MetadataType;
     if (MonoModUtils.baseTypeNameAtlas.TryGetValue(metadataType, out string name))
       return name;
-    if (type is ArrayType arrayType)
-      return $"{arrayType.GetElementType().GetSimpleName()}[{new string(',', arrayType.Rank - 1)}]";
-    if (type.IsByReference)
-      return $"{type.GetElementType().GetSimpleName()}&";
-    if (type.IsPointer)
-      return $"{type.GetElementType().GetSimpleName()}*";
-    if (type.IsGenericParameter)
-      return type.Name;
+    if (self is ArrayType arrayType)
+      return string.Concat(arrayType.ElementType.GetSimpleName(), "[", new string(',', arrayType.Rank - 1), "]");
+    if (self is ByReferenceType byRefType)
+      return byRefType.ElementType.GetSimpleName() + "&";
+    if (self is PointerType ptrType)
+      return ptrType.ElementType.GetSimpleName() + "*";
+    if (self.IsGenericParameter)
+      return self.Name;
+    if (self.HasGenericParameters)
+    {
+      name = self.Name.SubstringUntil('`');
+      if (self.DeclaringType == null)
+        return string.Concat(name, "<", self.GenericParameters.GetFormattedGenericTypes(), ">");
+      return string.Concat(self.DeclaringType.GetResolvedDeclarer(), ".", name, "<", self.GenericParameters.GetFormattedGenericTypes(), ">");
+    }
+    if (self is GenericInstanceType genericInstance)
+    {
+      name = self.Name.SubstringUntil('`');
+      if (self.DeclaringType == null)
+        return string.Concat(name, "<", genericInstance.GenericArguments.GetFormattedGenericTypes(), ">");
+      return string.Concat(self.DeclaringType.GetResolvedDeclarer(), ".", name, "<", genericInstance.GenericArguments.GetFormattedGenericTypes(), ">");
+    }
+    if (self.DeclaringType == null)
+      return self.Name;
+    return string.Concat(self.DeclaringType.GetResolvedDeclarer(), ".", self.Name);
+  }
 
-    if (type.HasGenericParameters)
-    {
-      if (type.Namespace == "System")
-        if (type.Name.Length > 8 && type.Name.StartsWith("Nullable"))
-          return $"{type.GenericParameters[0].GetSimpleName()}?";
-        else if (type.Name.Length > 10 && type.Name.StartsWith("ValueTuple"))
-          return $"({type.GenericParameters.GetFormattedGenericTypes()})";
-      return $"{type.Name.SubstringUntil('`')}<{type.GenericParameters.GetFormattedGenericTypes()}>";
-    }
-    else if (type is GenericInstanceType genericInstance)
-    {
-      if (type.Namespace == "System")
-        if (type.Name.Length > 8 && type.Name.StartsWith("Nullable"))
-          return $"{genericInstance.GenericArguments[0].GetSimpleName()}?";
-        else if (type.Name.Length > 10 && type.Name.StartsWith("ValueTuple"))
-          return $"({genericInstance.GenericArguments.GetFormattedGenericTypes()})";
-      return $"{type.Name.SubstringUntil('`')}<{genericInstance.GenericArguments.GetFormattedGenericTypes()}>";
-    }
-    if (type.DeclaringType == null)
-      return type.Name;
-    return $"{type.DeclaringType.GetSimpleName()}.{type.Name}";
+  public static string GetNamespace(this TypeReference self)
+  {
+    while (self.DeclaringType != null)
+      self = self.DeclaringType;
+    return self.Namespace;
   }
 
   /// <summary>
   /// Returns method definition similar to how it'd be written in c#
   /// </summary>
-  public static string GetSimpleName(this MethodReference method) => new StringBuilder(128).Append(method.ReturnType.GetSimpleName()).Append(' ')
-    .Append(method.GetFullSimpleName()).Append('(').Append(method.Parameters.GetFormattedParameterTypes()).Append(')').ToString();
+  public static string GetSimpleName(this MethodReference self) => new StringBuilder(128).Append(self.ReturnType.GetArgumentName()).Append(' ')
+    .Append(self.GetFullSimpleName()).Append('(').Append(self.Parameters.GetFormattedParameterTypes()).Append(')').ToString();
 
   /// <summary>
   /// Returns field definition similar to how it'd be written in c#
   /// </summary>
-  public static string GetSimpleName(this FieldReference field)
+  public static string GetSimpleName(this FieldReference self)
   {
-    return $"{field.FieldType.GetSimpleName()} {field.DeclaringType.GetSimpleName()}.{field.Name}";
+    return $"{self.FieldType.GetArgumentName()} {self.DeclaringType.GetSimpleName()}.{self.Name}";
   }
 
   /// <summary>
   /// Returns full method name with declaring type definition similar to how it'd be initially written in c#
   /// </summary>
-  public static string GetFullSimpleName(this MethodReference method)
+  public static string GetFullSimpleName(this MethodReference self)
   {
     StringBuilder sb = new(64);
-    if (method.DeclaringType.Namespace.Length != 0)
-      sb.Append(method.DeclaringType.Namespace).Append('.');
-    return sb.Append(method.DeclaringType.GetSimpleName()).Append('.').Append(method.Name).ToString();
+    string @namespace = self.DeclaringType.GetNamespace();
+    if (@namespace.Length != 0)
+      sb.Append(@namespace).Append('.');
+    return sb.Append(self.DeclaringType.GetSimpleName()).Append('.').Append(self.Name).ToString();
   }
 
   /// <summary>
@@ -280,16 +315,16 @@ public static class Extensions
       case null:
         break;
       case TypeReference type:
-        sb.Append(" ").Append(type.GetSimpleName());
+        sb.Append(' ').Append(type.GetSimpleName());
         break;
       case MethodReference method:
-        sb.Append(" ").Append(method.GetSimpleName());
+        sb.Append(' ').Append(method.GetSimpleName());
         break;
       case FieldReference field:
-        sb.Append(" ").Append(field.GetSimpleName());
+        sb.Append(' ').Append(field.GetSimpleName());
         break;
       default:
-        sb.Append(" ").Append(i.Operand.ToString());
+        sb.Append(' ').Append(i.Operand.ToString());
         break;
     }
     return sb.ToString();
@@ -379,4 +414,9 @@ public static class DetourUtils
   public static Hook newHookRND(MethodBase from, MethodInfo to) => new(from.GetInvocationTarget(), to, null);
   public static Hook newHookRND(MethodBase from, MethodInfo to, HookConfig config) => new(from.GetInvocationTarget(), to, null, config);
   public static Hook newHookRND(MethodBase from, MethodInfo to, ref HookConfig config) => new(from.GetInvocationTarget(), to, null, ref config);
+
+  public static Hook newHookRND<T>(string methodName, Delegate to) => new(typeof(T).GetMethod(methodName, BFlags.anyDeclared).GetInvocationTarget(), to.Method);
+  public static Hook newHookRND<T>(string methodName, MethodInfo to) => new(typeof(T).GetMethod(methodName, BFlags.anyDeclared).GetInvocationTarget(), to);
+  public static Hook newHookRND(Type type, string methodName, Delegate to) => new(type.GetMethod(methodName, BFlags.anyDeclared).GetInvocationTarget(), to.Method);
+  public static Hook newHookRND(Type type, string methodName, MethodInfo to) => new(type.GetMethod(methodName, BFlags.anyDeclared).GetInvocationTarget(), to);
 }
