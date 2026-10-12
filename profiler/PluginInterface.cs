@@ -4,7 +4,7 @@ namespace profiler;
 
 public class PluginInterface : OptionInterface
 {
-  public Configurable<bool> profileGlobal, conditionalProfileGlobal, profileMods, profileModInit;
+  public Configurable<bool> profileGlobal, conditionalProfileGlobal, profileMods, profileMemory, profileModInit;
 
   public UIelement[] options;
 
@@ -13,6 +13,7 @@ public class PluginInterface : OptionInterface
     profileGlobal = config.Bind("profileGlobal", Patcher.settings.profileGlobal);
     conditionalProfileGlobal = config.Bind("conditionalProfileGlobal", Patcher.settings.conditionalProfileGlobal);
     profileMods = config.Bind("profileMods", Patcher.settings.profileMods);
+    profileMemory = config.Bind("profileMemory", Patcher.settings.profileMemory);
     profileModInit = config.Bind("profileModInit", Patcher.settings.profileModInit);
   }
 
@@ -30,8 +31,10 @@ public class PluginInterface : OptionInterface
       new OpLabel(60f, 480f, "Profile only complex methods"),
       new OpCheckBox(profileMods, new(10f, 450f)),
       new OpLabel(40f, 450f, "Profile mods' methods"),
-      new OpCheckBox(profileModInit, new(10f, 420f)),
-      new OpLabel(40f, 420f, "Profile mod init stages"),
+      new OpCheckBox(profileMemory, new(10f, 420f)),
+      new OpLabel(40f, 420f, "Profile memory changes instead of invocation time"),
+      new OpCheckBox(profileModInit, new(10f, 390f)),
+      new OpLabel(40f, 390f, "Profile mod init stages"),
     ];
 
     optionsTab.AddItems(options);

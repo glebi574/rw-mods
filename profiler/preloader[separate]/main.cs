@@ -1,27 +1,31 @@
 ﻿using gelbi_silly_lib;
 using gelbi_silly_lib.Converter;
+using gelbi_silly_lib.MonoModUtils;
 using gelbi_silly_lib.ReflectionUtils;
 using Mono.Cecil;
-using Mono.Cecil.Cil;
-using MonoMod.Cil;
-using MonoMod.RuntimeDetour;
 using MonoMod.Utils;
+using profiler_preloader;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
+using System.Reflection;
+using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace profiler;
 
 public class MethodStats(object method)
 {
   public object method = method;
+  public string name = method switch
+  {
+    MethodDefinition methodDefinition => methodDefinition.GetFullSimpleName(),
+    MethodBase methodBase => methodBase.GetFullSimpleName(),
+    _ => method.ToString()
+  };
   public uint invokeCounter = 0;
   public long totalTime = 0, minTime = long.MaxValue, maxTime = 0;
 }
@@ -39,10 +43,10 @@ public static class Profiler
     {
       outputPath = _outputPath;
       (worker = new(Loop) { IsBackground = true }).Start();
-      AppDomain.CurrentDomain.ProcessExit += CurrentDomain_ProcessExit;
+      GSLPUtils.OnExit += OnExit;
     }
 
-    public static void CurrentDomain_ProcessExit(object sender, EventArgs e)
+    public static void OnExit()
     {
       running = false;
       worker.Join();
@@ -51,29 +55,43 @@ public static class Profiler
       try
       {
         StreamWriter profilerDataStream = new(outputPath, false);
-        profilerDataStream.WriteLine("Method\tavg(ms)\tmin(ms)\tmax(ms)\ttotal(ms)\tinvokes");
+        string unit;
+        double modifier;
+        if (Patcher.settings.profileMemory)
+        {
+          unit = "(MB)";
+          overhead = 0.0;
+          modifier = 1.0 / 0x100000;
+        }
+        else
+        {
+          unit = "(ms)";
+          modifier = 1000.0 / Stopwatch.Frequency;
+        }
+        profilerDataStream.WriteLine($"Method\tavg{unit}\tmin{unit}\tmax{unit}\ttotal{unit}\tinvokes");
+        StringBuilder sb = new(256);
         foreach (MethodStats stats in methodStats)
         {
           if (stats.invokeCounter == 0)
             continue;
-          double modifier = 1000.0 / Stopwatch.Frequency,
-            totalTime = stats.totalTime * modifier,
-            avgTime = totalTime / stats.invokeCounter,
-            minTime = stats.minTime * modifier,
-            maxTime = stats.maxTime * modifier;
-          profilerDataStream.WriteLine($"{(stats.method is System.Reflection.MethodBase methodBase ? methodBase.GetSimpleName() : stats.method)}" +
-            $"\t{avgTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
-            $"\t{minTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
-            $"\t{maxTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
-            $"\t{totalTime.ToString("0.######", CultureInfo.InvariantCulture)}" +
-            $"\t{stats.invokeCounter}");
+          double totalTime = (stats.totalTime - overhead * stats.invokeCounter) * modifier;
+          profilerDataStream.WriteLine(sb.Clear().Append(stats.method switch
+          {
+            MethodBase methodBase => methodBase.GetSimpleName(),
+            MethodDefinition methodDefinition => methodDefinition.GetSimpleName(),
+            _ => stats.method.ToString()
+          }).Append('\t').Append((totalTime / stats.invokeCounter).ToString("0.######", CultureInfo.InvariantCulture))
+            .Append('\t').Append((Math.Max(0.0, stats.minTime - overhead) * modifier).ToString("0.######", CultureInfo.InvariantCulture))
+            .Append('\t').Append(((stats.maxTime - overhead) * modifier).ToString("0.######", CultureInfo.InvariantCulture))
+            .Append('\t').Append(totalTime.ToString("0.######", CultureInfo.InvariantCulture))
+            .Append('\t').Append(stats.invokeCounter).ToString());
         }
         profilerDataStream.Flush();
         profilerDataStream.Close();
       }
       catch (Exception ei)
       {
-        LogError($"Failed to save profiler data: {ei}");
+        Log($"[Error] Failed to save profiler data: {ei}");
       }
     }
 
@@ -84,6 +102,17 @@ public static class Profiler
         while (queue.TryDequeue(out ProfilerEntry entry))
         {
           MethodStats stats = methodStats[entry.id];
+          if (trackedMethods.Contains(entry.id))
+          {
+            string msg = $"[Tracked] ({entry.duration * 1000.0 / Stopwatch.Frequency:0}ms) {stats.method switch
+            {
+              MethodBase methodBase => methodBase.GetSimpleName(),
+              MethodDefinition methodDefinition => methodDefinition.GetSimpleName(),
+              _ => stats.method.ToString()
+            }}";
+            Console.WriteLine(msg);
+            GSLLog.GLog(msg);
+          }
           ++stats.invokeCounter;
           stats.totalTime += entry.duration;
           stats.minTime = Math.Min(entry.duration, stats.minTime);
@@ -101,140 +130,39 @@ public static class Profiler
   }
 
   public static WriterThread Logger;
-  public static MethodReference Profiler_End, ref_GetTimestamp;
-  public static TypeReference ref_long;
+  public static Dictionary<MethodBase, int> profiledMethods = [];
   public static List<MethodStats> methodStats = [];
+  public static HashSet<int> trackedMethods = [];
+  public static MethodDefinition GetMonoUsedSizeLong = AssemblyDefinition.ReadAssembly("RainWorld_Data\\Managed\\UnityEngine.CoreModule.dll").MainModule
+    .GetType("UnityEngine.Profiling.Profiler").FindMethod("GetMonoUsedSizeLong");
   public static int index = 0;
+  public static double frequencyModifier = 1000.0 / Stopwatch.Frequency, overhead = Stopwatch.Frequency == 10000000 ? 0.24 : 0.0; // doing nothing still measures >21ns of overhead?
+
+  public static int GetID(MethodBase method) => profiledMethods.TryGetValue(method, out int id) ? id : (profiledMethods[method] = index++);
 
   public static void Log(string str) => Logger.WriteLine(str);
 
   public static void LogT(string str) => Logger.WriteLine(DateTime.Now.ToString("[HH:mm:ss] ") + str);
 
-  public static void LogError(object obj) => Logger.WriteLine($"[Error] {obj}");
+  public static void End(int id, long start, long end) => Processor.queue.Enqueue(new(id, end - start));
 
-  public static void ProfilerPatcher(MethodDefinition method)
+  public static void AddTrackedMethod(string name)
   {
-    MethodBody body = method.Body;
-    ILProcessor il = body.GetILProcessor();
-    Instruction first = body.Instructions[0];
-
-    methodStats.Add(new(method));
-    int id = index++;
-
-    VariableDefinition localTime = new(ref_long);
-    body.Variables.Add(localTime);
-    body.InitLocals = true;
-
-    il.InsertBefore(first, il.Create(OpCodes.Call, ref_GetTimestamp));
-    il.InsertBefore(first, il.Create(OpCodes.Stloc, localTime));
-
-    foreach (Instruction i in body.Instructions)
-      if (i.Operand is Instruction && i.OpCode.OperandType == OperandType.ShortInlineBrTarget)
-        i.OpCode = i.OpCode.ToLongOp();
-    foreach (Instruction ret in body.Instructions.Where(i =>
-    {
-      OpCode c = i.OpCode;
-      return c == OpCodes.Ret || c == OpCodes.Throw;
-    }).ToList())
-    {
-      il.InsertAfter(ret, il.Create(ret.OpCode));
-      il.InsertAfter(ret, il.Create(OpCodes.Call, Profiler_End));
-      il.InsertAfter(ret, il.Create(OpCodes.Ldloc, localTime));
-
-      ret.OpCode = OpCodes.Ldc_I4;
-      ret.Operand = id;
-    }
-  }
-
-  public static void End(int id, long startTime)
-  {
-    Processor.queue.Enqueue(new(id, Stopwatch.GetTimestamp() - startTime));
-  }
-
-  /// <summary>
-  /// Patches all methods in the type with profiler patch
-  /// </summary>
-  public static void PatchType(Type type)
-  {
-    foreach (System.Reflection.MethodInfo method in type.GetMethods(BFlags.anyDeclared))
-      PatchMethod(method);
-    foreach (System.Reflection.ConstructorInfo ctor in type.GetConstructors(BFlags.anyDeclaredInstance))
-      PatchMethod(ctor);
-  }
-
-  /// <summary>
-  /// Patches method with profiler patch
-  /// </summary>
-  public static void PatchMethod(System.Reflection.MethodBase methodBase)
-  {
-    try
-    {
-      new ILHook(methodBase, ProfilerHook);
-      methodStats.Add(new(methodBase));
-      LogT($"Patched {methodBase.GetFullSimpleName()}");
-    }
-    catch (Exception e)
-    {
-      LogT($"Failed to patch {methodBase.GetFullSimpleName()}: {e}");
-    }
-  }
-
-  /// <summary>
-  /// Allows to specify methods to profile if neither of global profiling options are enabled
-  /// </summary>
-  public static void PatchMethods(params System.Reflection.MethodBase[] methods) => PatchMethodsInternal(methods);
-
-  /// <summary>
-  /// Allows to specify methods to profile if neither of global profiling options are enabled
-  /// </summary>
-  public static void PatchMethods(params Delegate[] methods) => PatchMethodsInternal(methods);
-
-  static void PatchMethodsInternal(params object[] methods)
-  {
-    if (Patcher.settings.profileGlobal || Patcher.settings.profileMods)
-    {
-      LogT($"Skipping additional patches");
-      return;
-    }
-    if (methods is Delegate[] delegates)
-      foreach (Delegate method in delegates)
-        PatchMethod(method.Method);
-    else if (methods is System.Reflection.MethodBase[] methodBases)
-      foreach (System.Reflection.MethodBase methodBase in methodBases)
-        PatchMethod(methodBase);
-    LogT($"Finished additional patches");
-  }
-
-  public static void ProfilerHook(ILContext il)
-  {
-    ILCursor c = new(il);
-    MethodBody body = il.Body;
-    int id = index++;
-
-    VariableDefinition localTime = new(il.Module.ImportReference(typeof(long)));
-    body.Variables.Add(localTime);
-    body.InitLocals = true;
-
-    c.EmitDelegate(Stopwatch.GetTimestamp);
-    c.Emit(OpCodes.Stloc, localTime);
-
-    foreach (Instruction ret in body.Instructions.Where(i =>
-    {
-      OpCode c = i.OpCode;
-      return c == OpCodes.Ret || c == OpCodes.Throw;
-    }).ToList())
-    {
-      c.Goto(ret);
-      c.Emit(OpCodes.Ldc_I4, id);
-      c.Emit(OpCodes.Ldloc, localTime);
-      c.EmitDelegate(End);
-    }
+    bool added = false;
+    for (int i = 0; i < methodStats.Count; ++i)
+      if (methodStats[i].name == name)
+      {
+        trackedMethods.Add(i);
+        added = true;
+      }
+    if (!added)
+      throw new ArgumentException("Couldn't find profiled method with given name. See profilerLog.txt for methods that are profiled. Search is only performed for pattern 'namespace.declaringType.name'");
   }
 }
 
 public class ProfilerSettings : BaseSavedDataHandler
 {
-  public bool profileGlobal = false, conditionalProfileGlobal = true, profileMods = false, profileModInit = true;
+  public bool profileGlobal = false, conditionalProfileGlobal = true, profileMods = false, profileModInit = false, profileMemory = false, profileThreads = false;
 
   public ProfilerSettings(string filename) : base(filename) { }
 
@@ -246,15 +174,15 @@ public class ProfilerSettings : BaseSavedDataHandler
     data.TryUpdateValueWithType("conditionalProfileGlobal", ref conditionalProfileGlobal);
     data.TryUpdateValueWithType("profileMods", ref profileMods);
     data.TryUpdateValueWithType("profileModInit", ref profileModInit);
+    data.TryUpdateValueWithType("profileMemory", ref profileMemory);
   }
 }
 
 public static class Patcher
 {
-  public const string customLogsPath = "customLogs", profilerLogPath = $"{customLogsPath}/profilerLog.txt",
-    profilerDataPath = $"{customLogsPath}/profilerData.txt";
+  public const string customLogsPath = "customLogs\\", profilerLogPath = $"{customLogsPath}profilerLog.txt", profilerDataPath = $"{customLogsPath}profilerData.txt";
 
-  public static int allPatchedMethodCounter = 0;
+  public static int patchedMethodCounter = 0, errorCounter = 0, allPatchedMethodCounter = 0;
   public static Stopwatch initializationStopwatch;
   public static ProfilerSettings settings;
 
@@ -273,6 +201,8 @@ public static class Patcher
 
     Directory.CreateDirectory(customLogsPath);
     Profiler.Processor.Init(profilerDataPath);
+    if (settings.profileThreads)
+      ThreadPatcher.Apply();
   }
 
   public static IEnumerable<string> TargetDLLs
@@ -281,10 +211,10 @@ public static class Patcher
     {
       if (!settings.profileGlobal)
         yield break;
-      foreach (string assemblyPath in Directory.GetFiles("RainWorld_Data\\Managed").Where(p => Path.GetExtension(p) == ".dll"))
+      foreach (string assemblyPath in Directory.GetFiles("RainWorld_Data\\Managed", "*.dll"))
       {
         string assemblyName = Path.GetFileName(assemblyPath);
-        if (!assembliesToSkip.Contains(assemblyName))
+        if (!DefinitionPatcher.assembliesToSkip.Contains(assemblyName))
           yield return assemblyName;
       }
     }
@@ -295,91 +225,30 @@ public static class Patcher
     Profiler.LogT($"** Finished patching initial {allPatchedMethodCounter} methods in {initializationStopwatch.Elapsed.TotalSeconds:F6} seconds");
     if (errorCounter != 0)
       Profiler.Log($"Failed to patch {errorCounter} methods");
-
     if (settings.profileMods)
       AssemblyUtils.AddUniversalAssemblyPatch(Patch);
+    //MethodPatcher.PatchMethods([
+    //  typeof(DMDEmitDynamicMethodGenerator).GetMethod("_Generate", BFlags.anyDeclaredInstance),
+    //  //typeof(MonoMod.Utils.Extensions).GetMethod("GetPatchFullName", BFlags.anyDeclaredStatic, null, [typeof(MemberReference)], null)
+    //  //typeof(MonoMod.Utils.Extensions).GetMethod("GetID", BFlags.anyDeclaredStatic, null, [typeof(MethodReference), typeof(string), typeof(string), typeof(bool), typeof(bool)], null),
+    //  //typeof(ReflectionHelper).GetMethod("GetRuntimeHashedFullName", BFlags.anyDeclaredStatic, null, [typeof(AssemblyNameReference)], null),
+    //  //typeof(ILGeneratorShimExt).GetMethod("DynEmit", BFlags.anyDeclaredStatic, null, [typeof(ILGenerator), typeof(object[])], null)
+    //]);
+    //MethodPatcher.PatchMethods([
+    //  ImplMonoMod.ReflectionHelper__ResolveReflection,
+    //  //ImplMonoMod.GetMemberName,
+    //  //ImplMonoMod.Extensions_GetPatchFullName,
+    //  //ImplMonoMod.ILGeneratorShimExt_DynEmit,
+    //  //ImplMonoMod.Extensions_Is,
+    //]);
   }
-
-  public static int patchedMethodCounter = 0, errorCounter = 0;
-  public static TypeReference asyncType, iteratorType;
 
   public static void Patch(AssemblyDefinition asm)
   {
     patchedMethodCounter = 0;
     Profiler.LogT($"Patching methods of {asm.Name.Name}");
     Stopwatch stopwatch = Stopwatch.StartNew();
-    foreach (ModuleDefinition module in asm.Modules)
-    {
-      Profiler.Profiler_End = module.ImportReference(typeof(Profiler).GetMethod(nameof(Profiler.End)));
-      Profiler.ref_GetTimestamp = module.ImportReference(typeof(Stopwatch).GetMethod(nameof(Stopwatch.GetTimestamp)));
-      Profiler.ref_long = module.ImportReference(typeof(long));
-      asyncType = module.ImportReference(typeof(AsyncStateMachineAttribute));
-      iteratorType = module.ImportReference(typeof(IteratorStateMachineAttribute));
-      foreach (TypeDefinition type in module.Types)
-        PatchType(type);
-    }
+    DefinitionPatcher.PatchAssembly(asm);
     Profiler.LogT($"Finished patching {patchedMethodCounter} methods in {stopwatch.Elapsed.TotalSeconds:F6} seconds");
-  }
-
-  public static readonly HashSet<string> namespacesToSkip = [
-      "System", "On", "IL", "Microsoft", "Rewired",
-      "MS", "Sony", "Stove", "ObjCRuntimeInternal",
-      "XamMac", "Internal", "AssetBundles", "profiler" ],
-    assembliesToSkip = [
-      "System.Core.dll", "MonoMod.Utils.dll", "Mono.Cecil.dll", "Mono.Cecil.Mdb.dll", "Mono.Cecil.Pdb.dll", "Mono.Cecil.Rocks.dll",
-      "MonoMod.RuntimeDetour.dll", "Mono.Security.dll", "System.Configuration.dll", "System.Xml.dll", "Rewired_Windows.dll",
-      "Rewired_Core.dll", "gelbi-silly-lib-preloader.dll" ];
-
-  public static bool IsSkippedNamespace(string name)
-  {
-    if (name == null)
-      return true;
-    foreach (string skippedNamespace in namespacesToSkip)
-      if (name.StartsWith(skippedNamespace))
-        return true;
-    return false;
-  }
-
-  public static readonly (string declaringType, string name)[] skippedMethods =
-  [
-    ("ObjectsPage", "Refresh"),
-    ("SlugNPCAI", "Move"),
-  ];
-
-  public static void PatchType(TypeDefinition type, string indent = "")
-  {
-    if (IsSkippedNamespace(type.Namespace) || type.Name.StartsWith("<"))
-      return;
-
-    Profiler.Log(indent + type);
-    foreach (TypeDefinition nestedType in type.NestedTypes)
-      PatchType(nestedType, indent + "  ");
-
-    ConcurrentBag<MethodDefinition> methods = [];
-    Parallel.ForEach(type.Methods, method =>
-    {
-      if (method.HasBody && !method.Name.StartsWith("<") && (!method.IsConstructor || !method.IsStatic)
-        && (!settings.conditionalProfileGlobal || method.Body.Instructions.Count > 50)
-        && !method.CustomAttributes.Any(a => a.AttributeType == asyncType || a.AttributeType == iteratorType)
-        && !skippedMethods.Any(m => method.DeclaringType.Name == m.declaringType && method.Name == m.name))
-        methods.Add(method);
-    });
-
-    foreach (MethodDefinition method in methods)
-    {
-      Profiler.Log($"{indent}| {method}");
-      try
-      {
-        Profiler.ProfilerPatcher(method);
-      }
-      catch (Exception e)
-      {
-        Profiler.Log($"Failed to patch {method}: {e}");
-        ++errorCounter;
-      }
-
-      ++allPatchedMethodCounter;
-      ++patchedMethodCounter;
-    }
   }
 }
