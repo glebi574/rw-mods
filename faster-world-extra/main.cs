@@ -37,7 +37,7 @@ public static class CommonWrapper
 [BepInPlugin(PLUGIN_GUID, PLUGIN_NAME, PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-  public const string PLUGIN_GUID = "0gelbi.faster-world-extra", PLUGIN_NAME = "Faster World Extra", PLUGIN_VERSION = "1.0.2", targetVersion = "1.11.8";
+  public const string PLUGIN_GUID = "0gelbi.faster-world-extra", PLUGIN_NAME = "Faster World Extra", PLUGIN_VERSION = "1.0.3", targetVersion = "1.11.8";
   public static bool isInit = false, gslEnabled = false;
   public static BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 

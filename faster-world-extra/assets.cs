@@ -141,7 +141,7 @@ public static class M_Assets
 
   public static string WorldLoader_FindRoomFile(string roomName, bool includeRootDirectory, string additionalAppend, bool showWarning = true)
   {
-    string region = (roomName = roomName.ToLowerInvariant()).SubstringUntil('_'), roomFile = roomName + additionalAppend;
+    string region = (roomName = roomName.ToLowerInvariant()).SubstringUntil('_'), roomFile = roomName + additionalAppend.ToLowerInvariant();
     if (ResolveFilePath(string.Concat("world\\", region, "-rooms\\", roomFile), out string path)
      || region == "gate"
      && ResolveFilePath("world\\gates\\" + roomFile, out path)
